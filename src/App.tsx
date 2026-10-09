@@ -228,8 +228,17 @@ export const App: React.FC = () => {
   };
 
   // Report Download Handler
-  const handleDownloadReport = (format: ReportFormat) => {
-    generateReportFile(currentF1Case, activeAnalysisRun, selectedReportType, format);
+  const handleDownloadReport = async (format: ReportFormat) => {
+    try {
+      if (!currentF1Case) {
+        alert('Please select or ingest a case document first.');
+        return;
+      }
+      await generateReportFile(currentF1Case, activeAnalysisRun, selectedReportType, format);
+    } catch (err: any) {
+      console.error('Failed to generate report file:', err);
+      alert(`Report Generation Error: ${err?.message || err}`);
+    }
   };
 
   // Publish to Tegrity Voyage Management Handler
