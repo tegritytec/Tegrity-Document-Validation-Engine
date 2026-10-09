@@ -75,54 +75,61 @@ export const App: React.FC = () => {
   // Target Case for F1 Validation Analysis
   const currentF1Case = cases.find(c => c.id === activeF1CaseId) || cases[0];
 
-  // Drag & Drop / File Browser Ingestion Handlers
-  const processUploadedFile = (file: File) => {
-    const docId = `DOC-INGEST-${Math.floor(10000 + Math.random() * 90000)}`;
-    const caseId = `TDV-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+  // Multiple Files Ingestion Handler
+  const processUploadedFiles = (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
 
-    const isPdf = file.name.endsWith('.pdf');
-    const isDocx = file.name.endsWith('.docx');
-    const docType = isPdf ? 'Charter Party Agreement' : isDocx ? 'Marine Insurance Policy' : 'Commercial Tax Invoice';
+    const newCreatedCases: CaseItem[] = fileArray.map((file, idx) => {
+      const docId = `DOC-INGEST-${Math.floor(10000 + Math.random() * 90000)}`;
+      const caseId = `TDV-2026-${Math.floor(1000 + Math.random() * 9000 + idx)}`;
 
-    const newCase: CaseItem = {
-      id: caseId,
-      documentId: docId,
-      documentType: docType,
-      vendorName: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
-      submissionDate: new Date().toISOString().replace('T', ' ').slice(0, 19),
-      claimValue: Math.floor(25000 + Math.random() * 200000),
-      currency: 'USD',
-      status: 'IN_REVIEW',
-      assignedAnalyst: 'Ashwani Sethi (Lead Auditor)',
-      overallScore: Math.floor(70 + Math.random() * 25),
-      expectedLoss: Math.floor(5000 + Math.random() * 25000),
-      riskCategory: 'MEDIUM',
-      hasCriticalGap: false,
-      findings: [
-        {
-          id: `FND-${Math.floor(10 + Math.random() * 90)}`,
-          ruleId: 'RULE-CP-001',
-          ruleName: 'BIMCO Laytime & Demurrage Check',
-          severity: 'MEDIUM',
-          probability: 0.25,
-          exposure: 15000,
-          expectedLoss: 3750,
-          description: 'Notice of Readiness (NOR) timestamp validated against port log.',
-          remediation: 'Confirm SHINC laytime deduction limits.'
-        }
-      ],
-      metadata: {
-        fileName: file.name,
-        fileSize: `${(file.size / 1024).toFixed(1)} KB`,
-        ocrConfidence: 98.2,
-        lineItemCount: 8
-      },
-      lineageId: `LIN-${Math.floor(1000 + Math.random() * 9000)}-DAG`
-    };
+      const isPdf = file.name.endsWith('.pdf');
+      const isDocx = file.name.endsWith('.docx');
+      const docType = isPdf ? 'Charter Party Agreement' : isDocx ? 'Marine Insurance Policy' : 'Commercial Tax Invoice';
 
-    setCases([newCase, ...cases]);
-    setActiveF1CaseId(caseId);
-    setUploadedFileName(file.name);
+      return {
+        id: caseId,
+        documentId: docId,
+        documentType: docType,
+        vendorName: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+        submissionDate: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        claimValue: Math.floor(25000 + Math.random() * 200000),
+        currency: 'USD',
+        status: 'IN_REVIEW',
+        assignedAnalyst: 'Ashwani Sethi (Lead Auditor)',
+        overallScore: Math.floor(70 + Math.random() * 25),
+        expectedLoss: Math.floor(5000 + Math.random() * 25000),
+        riskCategory: 'MEDIUM',
+        hasCriticalGap: false,
+        findings: [
+          {
+            id: `FND-${Math.floor(10 + Math.random() * 90)}`,
+            ruleId: 'RULE-CP-001',
+            ruleName: 'BIMCO Laytime & Demurrage Check',
+            severity: 'MEDIUM',
+            probability: 0.25,
+            exposure: 15000,
+            expectedLoss: 3750,
+            description: 'Notice of Readiness (NOR) timestamp validated against port log.',
+            remediation: 'Confirm SHINC laytime deduction limits.'
+          }
+        ],
+        metadata: {
+          fileName: file.name,
+          fileSize: `${(file.size / 1024).toFixed(1)} KB`,
+          ocrConfidence: 98.2,
+          lineItemCount: 8
+        },
+        lineageId: `LIN-${Math.floor(1000 + Math.random() * 9000)}-DAG`
+      };
+    });
+
+    setCases([...newCreatedCases, ...cases]);
+    setActiveF1CaseId(newCreatedCases[0].id);
+
+    const names = fileArray.map(f => f.name).join(', ');
+    setUploadedFileName(fileArray.length === 1 ? names : `${fileArray.length} files (${names})`);
     setActiveAnalysisRun(null); // Reset run to allow fresh trigger
     setVoyagePublishResult(null);
   };
@@ -133,7 +140,7 @@ export const App: React.FC = () => {
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      processUploadedFile(e.target.files[0]);
+      processUploadedFiles(e.target.files);
     }
   };
 
@@ -155,7 +162,7 @@ export const App: React.FC = () => {
     setIsDraggingOver(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processUploadedFile(e.dataTransfer.files[0]);
+      processUploadedFiles(e.dataTransfer.files);
     }
   };
 
@@ -312,12 +319,13 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-container">
-      {/* Hidden File Input for Browse */}
+      {/* Hidden File Input supporting Multiple Selection */}
       <input 
         type="file" 
         ref={fileInputRef} 
         style={{ display: 'none' }} 
         accept=".pdf,.png,.jpg,.jpeg,.docx"
+        multiple
         onChange={handleFileInputChange}
       />
 
@@ -435,7 +443,7 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* F1: Ingestion & OCR with Drag & Drop, File Upload, Validation Analysis Trigger, Multi-Format Reports & Voyage Publishing */}
+        {/* F1: Ingestion & OCR with Drag & Drop, Multi-File Selection, Validation Analysis Trigger, Multi-Format Reports & Voyage Publishing */}
         {activeTab === 'F1' && (
           <div>
             <div className="sub">
@@ -458,10 +466,10 @@ export const App: React.FC = () => {
               {uploadedFileName && (
                 <div className="callout" style={{ borderColor: 'var(--cyan)', backgroundColor: 'rgba(6, 182, 212, 0.1)' }}>
                   <div className="callout-title" style={{ color: 'var(--cyan)' }}>
-                    ✓ Ingested Document: {uploadedFileName}
+                    ✓ Ingested Document Batch: {uploadedFileName}
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    Extracted metadata, verified checksum digest, and assigned target case: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{currentF1Case.id}</strong>. Ready for validation analysis.
+                    Extracted metadata, verified checksum digests, and set active target case: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{currentF1Case.id}</strong>. Ready for validation analysis.
                   </div>
                 </div>
               )}
@@ -478,7 +486,7 @@ export const App: React.FC = () => {
                 </div>
               )}
 
-              {/* Interactive Drag & Drop Area + Document Overview */}
+              {/* Interactive Multi-File Drag & Drop Area + Document Overview */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
                 <div 
                   onDragOver={handleDragOver}
@@ -497,14 +505,14 @@ export const App: React.FC = () => {
                 >
                   <div style={{ fontSize: '36px', marginBottom: '8px' }}>📂</div>
                   <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>
-                    {isDraggingOver ? 'Drop File Here to Ingest Document' : 'Drag & Drop Contract / Invoice (PDF, PNG, DOCX)'}
+                    {isDraggingOver ? 'Drop Files Here to Ingest Documents' : 'Drag & Drop Multiple Files (PDF, PNG, DOCX)'}
                   </div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '14px' }}>
-                    Click anywhere or use Browse button below to select local files.
+                    Select multiple files at once using the Browse Files button.
                   </div>
                   <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                     <button className="btn btn-primary" onClick={(e) => { e.stopPropagation(); handleFileBrowseClick(); }}>
-                      📁 Browse Files
+                      📁 Browse Multiple Files
                     </button>
                     <button className="btn btn-secondary" onClick={(e) => { e.stopPropagation(); handleTriggerValidationAnalysis(); }} disabled={isAnalyzing}>
                       {isAnalyzing ? 'Analyzing...' : '⚡ Trigger Validation'}
@@ -514,8 +522,21 @@ export const App: React.FC = () => {
 
                 <div>
                   <div className="callout">
-                    <div className="callout-title" style={{ color: 'var(--cyan)' }}>Current Target Document: {currentF1Case.documentId}</div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', marginTop: '8px', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <div className="callout-title" style={{ color: 'var(--cyan)' }}>Current Active Target Document</div>
+                      <select 
+                        className="search-box" 
+                        style={{ width: '160px', padding: '4px 8px', fontSize: '11px' }}
+                        value={activeF1CaseId}
+                        onChange={(e) => setActiveF1CaseId(e.target.value)}
+                      >
+                        {cases.map(c => (
+                          <option key={c.id} value={c.id}>{c.id} - {c.vendorName.slice(0, 15)}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>
                       <div>[CASE-ID]: {currentF1Case.id}</div>
                       <div>[VENDOR]: {currentF1Case.vendorName}</div>
                       <div>[DOC-TYPE]: {currentF1Case.documentType} (${currentF1Case.claimValue.toLocaleString()})</div>
