@@ -1,14 +1,18 @@
 import React, { useState, useRef } from 'react';
 import { MOCK_CASES, MOCK_PATTERNS, MOCK_RULES, MOCK_LINEAGE_GRAPH, MOCK_FEEDBACK_QUEUE, MOCK_EXECUTIVE_METRICS, MOCK_ANONYMIZED_HISTORICAL_CASES } from './data/mockData';
-import { CaseItem, FindingItem, PatternRule, ValidationRule, LearningFeedback, HistoricalFilter, WhatIfScenarioParams, ValidationAnalysisRun, ReportFormat, ReportType, VoyagePublishResponse } from './types/tdv';
+import { CaseItem, FindingItem, PatternRule, ValidationRule, LearningFeedback, HistoricalFilter, WhatIfScenarioParams, ValidationAnalysisRun, ReportFormat, ReportType, VoyagePublishResponse, ValidationDrillDownItem } from './types/tdv';
 import { evaluateCaseScoring } from './services/scoringEngine';
 import { filterHistoricalDataset, simulateWhatIfScenario } from './services/scenarioEngine';
 import { runValidationAnalysis, publishToVoyageManagement } from './services/validationAnalysisEngine';
 import { generateReportFile } from './services/reportGeneratorService';
+import { ValidationDrillDownModal } from './components/ValidationDrillDownModal';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('F9');
   
+  // Drill-Down Rationale Modal State
+  const [selectedDrillDownItem, setSelectedDrillDownItem] = useState<ValidationDrillDownItem | null>(null);
+
   // Cases State (F1/F9)
   const [cases, setCases] = useState<CaseItem[]>(MOCK_CASES);
   const [selectedCase, setSelectedCase] = useState<CaseItem | null>(null);
@@ -247,6 +251,62 @@ export const App: React.FC = () => {
     setVoyagePublishResult(res);
 
     setCases(cases.map(c => c.id === currentF1Case.id ? { ...c, status: 'PUBLISHED_TO_VOYAGE' } : c));
+  };
+
+  // Validation Assessment Drill Down Tile Handlers
+  const handleOpenGapDrillDown = (gap: any) => {
+    const drillItem: ValidationDrillDownItem = {
+      id: gap.ruleId || `GAP-${Math.random().toString(36).substring(2, 7)}`,
+      ruleId: gap.ruleId || 'RULE-CAT-01',
+      title: gap.title || 'Validation Assessment Gap',
+      gapType: gap.gapType || 'COMPLIANCE_GAP',
+      severity: gap.severity || 'HIGH',
+      safeguardOpportunity: gap.safeguardOpportunity || 'Enforce standard rider clause in contract.',
+      rationale: gap.rationale || `Validation assessment flagged an operational variance against rule catalog ${gap.ruleId}. Technical compliance verification requires remediation.`,
+      sourceExcerpt: gap.sourceExcerpt || `"...Extracted document clause text snippet: ${gap.title}. Verified under document ID ${currentF1Case.documentId}..."`,
+      scoreImpact: gap.scoreImpact || 15,
+      expectedLoss: gap.expectedLoss || Math.round(currentF1Case.claimValue * 0.1),
+      clauseRef: gap.clauseRef || 'Clause 14.B (BIMCO Standard)',
+      confidenceScore: gap.confidenceScore || 94.8,
+      auditorAction: gap.auditorAction || 'Enforce rider clause endorsement and obtain SME sign-off.'
+    };
+    setSelectedDrillDownItem(drillItem);
+  };
+
+  const handleOpenFindingDrillDown = (finding: FindingItem, targetCase: CaseItem) => {
+    const drillItem: ValidationDrillDownItem = {
+      id: finding.id,
+      ruleId: finding.ruleId,
+      title: finding.ruleName || finding.description,
+      gapType: finding.severity === 'CRITICAL' || finding.severity === 'HIGH' ? 'COMPLIANCE_GAP' : 'FINANCIAL_EXPOSURE',
+      severity: finding.severity,
+      safeguardOpportunity: finding.remediation || 'Enforce rider clause and require counterparty bank indemnity.',
+      rationale: finding.description || `Rule [${finding.ruleId}] failed validation check. Claim exposure calculated at $${finding.exposure.toLocaleString()} with probability weight ${finding.probability}.`,
+      sourceExcerpt: `"...Case ${targetCase.id} (${targetCase.vendorName}) - Invoiced claim value: $${targetCase.claimValue.toLocaleString()}..."`,
+      scoreImpact: Math.round(finding.probability * 25),
+      expectedLoss: finding.expectedLoss || Math.round(finding.exposure * finding.probability),
+      clauseRef: `Rule ID: ${finding.ruleId}`,
+      confidenceScore: Math.round(85 + finding.probability * 14),
+      auditorAction: finding.severity === 'CRITICAL' ? 'Halt Approval & Demand Indemnity Guarantee' : 'Require SME Reviewer Sign-off'
+    };
+    setSelectedDrillDownItem(drillItem);
+  };
+
+  const handlePushToContinuousLearning = (item: ValidationDrillDownItem) => {
+    const newFeedback: LearningFeedback = {
+      id: `LFB-AUTO-${Date.now()}`,
+      caseId: currentF1Case?.id || 'TDV-2026-001',
+      findingId: item.id,
+      auditorName: 'Continuous Learning Trigger',
+      originalScore: currentF1Case?.overallScore || 75,
+      adjustedScore: Math.max(0, (currentF1Case?.overallScore || 75) - item.scoreImpact),
+      auditorDecision: 'RATIFIED_RULE_ADDITION',
+      reasonCode: 'VALIDATION_DRILLDOWN_ENRICHMENT',
+      comment: `Auto-enrolled from Drill Down Tile: ${item.title} - ${item.safeguardOpportunity}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      learningStatus: 'APPROVED_FOR_CATALOG'
+    };
+    setFeedbackList([newFeedback, ...feedbackList]);
   };
 
   // Case Handlers
@@ -698,11 +758,30 @@ export const App: React.FC = () => {
                   </div>
 
                   <div className="tile">
-                    <div className="tile-label">Pattern Library Match Summary</div>
+                    <div className="tile-label">Pattern Library Match Summary (Click pattern for rationale)</div>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
                       {activeAnalysisRun.patternMatches.map(pm => (
-                        <span key={pm.patternId} className={`badge ${pm.status === 'MATCHED' ? 'badge-emerald' : 'badge-crimson'}`}>
-                          {pm.patternName} ({pm.confidence}%)
+                        <span 
+                          key={pm.patternId} 
+                          className={`badge ${pm.status === 'MATCHED' ? 'badge-emerald' : 'badge-crimson'}`}
+                          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          title="Click to view pattern validation rationale tile"
+                          onClick={() => handleOpenGapDrillDown({
+                            ruleId: pm.patternId,
+                            title: `Pattern Validation: ${pm.patternName}`,
+                            gapType: 'PATTERN_MISMATCH',
+                            severity: pm.status === 'MATCHED' ? 'LOW' : 'HIGH',
+                            safeguardOpportunity: `Verify token extraction pattern against regex ${pm.regexPattern || '^[A-Z0-9]+$'}.`,
+                            rationale: pm.rationale || `Pattern matching engine evaluated token structure for '${pm.patternName}'. Status: ${pm.status} (${pm.confidence}% confidence).`,
+                            sourceExcerpt: `Pattern Regex: ${pm.regexPattern || '^[A-Z0-9_]+$'}. Extracted document token confidence: ${pm.confidence}%.`,
+                            scoreImpact: pm.status === 'MATCHED' ? 0 : 12,
+                            expectedLoss: pm.status === 'MATCHED' ? 0 : 35000,
+                            clauseRef: `Pattern ID: ${pm.patternId}`,
+                            confidenceScore: pm.confidence,
+                            auditorAction: pm.status === 'MATCHED' ? 'Pattern verified successfully' : 'Update pattern library regex and re-scan document token stream'
+                          })}
+                        >
+                          🔍 {pm.patternName} ({pm.confidence}%)
                         </span>
                       ))}
                     </div>
@@ -720,6 +799,7 @@ export const App: React.FC = () => {
                         <th>Gap Type</th>
                         <th>Severity</th>
                         <th>Recommended Safeguard Opportunity</th>
+                        <th>Assessment Rationale Tile</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -734,6 +814,15 @@ export const App: React.FC = () => {
                             </span>
                           </td>
                           <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{g.safeguardOpportunity}</td>
+                          <td>
+                            <button 
+                              className="btn btn-secondary" 
+                              style={{ padding: '4px 10px', fontSize: '11px', border: '1px solid #38bdf8', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              onClick={() => handleOpenGapDrillDown(g)}
+                            >
+                              🔍 Drill Down Rationale
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1515,9 +1604,18 @@ export const App: React.FC = () => {
                 <div className="callout-title" style={{ color: 'var(--amber)' }}>Audit Findings & Expected Loss ($EL)</div>
                 {selectedCase.findings.map(f => (
                   <div key={f.id} style={{ borderBottom: '1px solid var(--surface-1)', padding: '12px 0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', alignItems: 'center' }}>
                       <strong style={{ fontSize: '13px' }}>{f.ruleName} ({f.ruleId})</strong>
-                      <span className={`badge ${f.severity === 'CRITICAL' ? 'badge-crimson' : 'badge-amber'}`}>{f.severity}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button 
+                          className="btn btn-secondary"
+                          style={{ padding: '2px 8px', fontSize: '11px', border: '1px solid #38bdf8', color: '#38bdf8' }}
+                          onClick={() => handleOpenFindingDrillDown(f, selectedCase)}
+                        >
+                          🔍 Drill Down Rationale
+                        </button>
+                        <span className={`badge ${f.severity === 'CRITICAL' ? 'badge-crimson' : 'badge-amber'}`}>{f.severity}</span>
+                      </div>
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>{f.description}</div>
                     <div style={{ display: 'flex', gap: '16px', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
@@ -1549,6 +1647,13 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Validation Assessment Drill-Down Popup Tile Modal */}
+      <ValidationDrillDownModal 
+        item={selectedDrillDownItem} 
+        onClose={() => setSelectedDrillDownItem(null)} 
+        onPushToContinuousLearning={handlePushToContinuousLearning}
+      />
     </div>
   );
 };

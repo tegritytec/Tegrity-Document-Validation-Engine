@@ -163,6 +163,22 @@ export interface ScenarioSimulationResult {
   recommendedWeightUpdates: { ruleId: string; recommendedWeight: number; rationale: string }[];
 }
 
+export interface ValidationDrillDownItem {
+  id: string;
+  ruleId: string;
+  title: string;
+  gapType?: 'COMPLIANCE_GAP' | 'PATTERN_MISMATCH' | 'FINANCIAL_EXPOSURE';
+  severity: Severity;
+  safeguardOpportunity: string;
+  rationale: string;
+  sourceExcerpt: string;
+  scoreImpact: number;
+  expectedLoss: number;
+  clauseRef: string;
+  confidenceScore: number;
+  auditorAction: string;
+}
+
 // Ingestion Validation Analysis Run
 export interface ValidationAnalysisRun {
   runId: string;
@@ -176,12 +192,21 @@ export interface ValidationAnalysisRun {
     gapType: 'COMPLIANCE_GAP' | 'PATTERN_MISMATCH' | 'FINANCIAL_EXPOSURE';
     severity: Severity;
     safeguardOpportunity: string;
+    rationale?: string;
+    sourceExcerpt?: string;
+    scoreImpact?: number;
+    expectedLoss?: number;
+    clauseRef?: string;
+    confidenceScore?: number;
+    auditorAction?: string;
   }[];
   patternMatches: {
     patternId: string;
     patternName: string;
     status: 'MATCHED' | 'FAILED';
     confidence: number;
+    rationale?: string;
+    regexPattern?: string;
   }[];
   executionTimeMs: number;
 }
