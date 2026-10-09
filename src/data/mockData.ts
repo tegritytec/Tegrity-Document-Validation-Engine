@@ -206,10 +206,48 @@ export const MOCK_PATTERNS: PatternRule[] = [
     confidenceThreshold: 90,
     sampleMatches: ['8504.40', '8471.30.00'],
     status: 'ACTIVE'
+  },
+  // Tokenized Shipping Contractual Governance Patterns
+  {
+    id: 'PAT-BIMCO-01',
+    name: 'BIMCO Standard Contractual Clause Token',
+    category: 'Charter Party Governance',
+    regexPattern: '^(BIMCO|NYPE2015|BALTIME|ASBATANKVOY)-[A-Z0-9-]{4,16}$',
+    confidenceThreshold: 98,
+    sampleMatches: ['BIMCO-SANCTIONS-2020', 'NYPE2015-CL-14', 'ASBATANKVOY-LAYTIME-02'],
+    status: 'ACTIVE'
+  },
+  {
+    id: 'PAT-MARPOL-02',
+    name: 'MARPOL Annex VI Bunker Delivery Note Token',
+    category: 'Port Compliance',
+    regexPattern: '^BDN-[0-9]{4}-[A-Z0-9]{6}$',
+    confidenceThreshold: 96,
+    sampleMatches: ['BDN-2026-X99201', 'BDN-2026-MARPOL01'],
+    status: 'ACTIVE'
+  },
+  {
+    id: 'PAT-ISPS-03',
+    name: 'ISPS Port Security Declaration Token (DOS)',
+    category: 'Port Security',
+    regexPattern: '^DOS-ISPS-L[1-3]-[0-9]{6}$',
+    confidenceThreshold: 99,
+    sampleMatches: ['DOS-ISPS-L1-992014', 'DOS-ISPS-L2-881203'],
+    status: 'ACTIVE'
+  },
+  {
+    id: 'PAT-SOLAS-04',
+    name: 'SOLAS V/34 Passage Plan Governance Token',
+    category: 'Master Instructions',
+    regexPattern: '^SOLAS-V34-[0-9]{8}-[A-Z]{3}$',
+    confidenceThreshold: 97,
+    sampleMatches: ['SOLAS-V34-20261009-RTM', 'SOLAS-V34-20260812-SGP'],
+    status: 'ACTIVE'
   }
 ];
 
 export const MOCK_RULES: ValidationRule[] = [
+  // General Financial & Compliance Rules
   {
     id: 'RULE-TAX-004',
     code: 'TAX_VAT_ONLINE_VERIFY',
@@ -253,6 +291,169 @@ export const MOCK_RULES: ValidationRule[] = [
     weight: 2.5,
     thresholdScore: 98,
     actionOnFailure: 'BLOCK'
+  },
+
+  // Tokenized Shipping Industry Contractual Governance Standards
+  // Group A: Charter Party Clauses (BIMCO / NYPE / ASBATANKVOY)
+  {
+    id: 'RULE-CP-001',
+    code: 'CP_BIMCO_NYPE_LAYTIME',
+    name: 'BIMCO NYPE Laytime & Demurrage Standard',
+    description: 'Verifies Notice of Readiness (NOR) validity, SHINC/SHEX terms, and 90-day time-bar demurrage submission requirements under NYPE 2015 Clause 14.',
+    severity: 'HIGH',
+    enabled: true,
+    weight: 1.6,
+    thresholdScore: 90,
+    actionOnFailure: 'FLAG'
+  },
+  {
+    id: 'RULE-CP-002',
+    code: 'CP_SPEED_CONSUMPTION_WARRANTY',
+    name: 'Speed & Fuel Consumption Warranty Audit',
+    description: 'Cross-references logbook data against charter agreement speed/consumption warranties under good weather conditions (Beaufort Scale <= 4).',
+    severity: 'HIGH',
+    enabled: true,
+    weight: 1.4,
+    thresholdScore: 88,
+    actionOnFailure: 'FLAG'
+  },
+  {
+    id: 'RULE-CP-003',
+    code: 'CP_OFFHIRE_CESSATION',
+    name: 'Off-Hire Cessation & Hire Withholding Audit',
+    description: 'Validates off-hire breakdown notices, drydocking clauses, and prevents unauthorized hire deductions prior to SME audit sign-off.',
+    severity: 'CRITICAL',
+    enabled: true,
+    weight: 1.8,
+    thresholdScore: 92,
+    actionOnFailure: 'BLOCK'
+  },
+
+  // Group B: Rider Clauses (Sanctions, War Risk, Bunker Quality, Cyber Security)
+  {
+    id: 'RULE-RIDER-010',
+    code: 'RIDER_BIMCO_SANCTIONS_2020',
+    name: 'BIMCO Sanctions Clause for Charter Parties 2020',
+    description: 'Tokenizes sanctions termination rights, prohibited trade zones, designated entity exposure, and carrier indemnity obligations.',
+    severity: 'CRITICAL',
+    enabled: true,
+    weight: 2.2,
+    thresholdScore: 98,
+    actionOnFailure: 'BLOCK'
+  },
+  {
+    id: 'RULE-RIDER-011',
+    code: 'RIDER_CONWAY_WAR_RISKS',
+    name: 'CONWAY 2013 / BIMCO War Risks (VOYWAR/CONWAR)',
+    description: 'Verifies war risk premium reimbursement terms, owner cancellation rights in high-threat areas, and mandatory hull war risk coverage limits.',
+    severity: 'HIGH',
+    enabled: true,
+    weight: 1.5,
+    thresholdScore: 90,
+    actionOnFailure: 'ESCALATE'
+  },
+  {
+    id: 'RULE-RIDER-012',
+    code: 'RIDER_ISO8217_BUNKER_QUALITY',
+    name: 'ISO 8217 Fuel Quality & Bunker Sampling Audit',
+    description: 'Enforces joint sampling protocol (MARPOL representative sample), 90-day lab dispute retention, and off-spec fuel disclaimer clauses.',
+    severity: 'HIGH',
+    enabled: true,
+    weight: 1.3,
+    thresholdScore: 85,
+    actionOnFailure: 'FLAG'
+  },
+  {
+    id: 'RULE-RIDER-013',
+    code: 'RIDER_CYBER_SECURITY_BIMCO',
+    name: 'BIMCO Cyber Security Operational Technology Clause',
+    description: 'Verifies carrier compliance with IMO MSC.428(98) cyber risk management and ISO 27001 operational technology safeguards.',
+    severity: 'MEDIUM',
+    enabled: true,
+    weight: 1.1,
+    thresholdScore: 80,
+    actionOnFailure: 'LOG'
+  },
+
+  // Group C: Master Instructions & Cargo Operations
+  {
+    id: 'RULE-MAST-020',
+    code: 'MASTER_SOLAS_PASSAGE_PLAN',
+    name: 'SOLAS V/34 Berth-to-Berth Passage Planning',
+    description: 'Validates Master passage plan tokenization, Under Keel Clearance (UKC) safety margins, and ECA environmental transit compliance.',
+    severity: 'HIGH',
+    enabled: true,
+    weight: 1.5,
+    thresholdScore: 90,
+    actionOnFailure: 'FLAG'
+  },
+  {
+    id: 'RULE-MAST-021',
+    code: 'MASTER_EBL_BIMCO_STD',
+    name: 'Electronic Bill of Lading (e-BL) Governance',
+    description: 'Tokenizes UNCITRAL MLETR model law signatures, title registry state verification, and carrier liability transition points for e-BLs.',
+    severity: 'CRITICAL',
+    enabled: true,
+    weight: 2.0,
+    thresholdScore: 95,
+    actionOnFailure: 'BLOCK'
+  },
+  {
+    id: 'RULE-MAST-022',
+    code: 'MASTER_STOWAGE_IMDG_SAFE',
+    name: 'IMDG Code Dangerous Goods Stowage Audit',
+    description: 'Cross-checks Dangerous Goods Declarations against master manifest stowage and segregation requirements under SOLAS Chapter VII.',
+    severity: 'CRITICAL',
+    enabled: true,
+    weight: 2.5,
+    thresholdScore: 98,
+    actionOnFailure: 'BLOCK'
+  },
+
+  // Group D: Port & Environmental Compliance
+  {
+    id: 'RULE-PORT-030',
+    code: 'PORT_MARPOL_ANNEX_VI_ECA',
+    name: 'MARPOL Annex VI Sulphur Emission Cap (ECA 0.10%)',
+    description: 'Audits Bunker Delivery Notes (BDNs) and logbook fuel switchovers for ECA (0.10% Sulphur) and global (0.50% Sulphur) compliance.',
+    severity: 'CRITICAL',
+    enabled: true,
+    weight: 2.0,
+    thresholdScore: 95,
+    actionOnFailure: 'BLOCK'
+  },
+  {
+    id: 'RULE-PORT-031',
+    code: 'PORT_EU_ETS_MARITIME_ALLOW',
+    name: 'EU ETS Maritime Allowance Transfer & Verification',
+    description: 'Audits MRV GHG emissions reporting data and verifies EU Allowance (EUA) surrender obligations between charterer and shipowner.',
+    severity: 'HIGH',
+    enabled: true,
+    weight: 1.6,
+    thresholdScore: 90,
+    actionOnFailure: 'ESCALATE'
+  },
+  {
+    id: 'RULE-PORT-032',
+    code: 'PORT_ISPS_SECURITY_LEVEL',
+    name: 'ISPS Code Port Facility Security Level Verification',
+    description: 'Verifies Declaration of Security (DOS) tokens for ship-to-port interface compliance under ISPS Security Levels 1, 2, and 3.',
+    severity: 'HIGH',
+    enabled: true,
+    weight: 1.7,
+    thresholdScore: 92,
+    actionOnFailure: 'BLOCK'
+  },
+  {
+    id: 'RULE-PORT-033',
+    code: 'PORT_BWM_BALLAST_EXCHANGE',
+    name: 'IMO D-2 Ballast Water Management Standard',
+    description: 'Audits Ballast Water Record Book entries, D-2 biological discharge standard compliance, and BWTS operational status.',
+    severity: 'MEDIUM',
+    enabled: true,
+    weight: 1.2,
+    thresholdScore: 85,
+    actionOnFailure: 'FLAG'
   }
 ];
 
@@ -269,7 +470,7 @@ export const MOCK_LINEAGE_GRAPH: LineageNode[] = [
     label: 'Pattern Matching Engine (F2)',
     type: 'PROCESS',
     status: 'PASSED',
-    details: 'Validated Regex Formats for VAT, IBAN, and IMO Numbers',
+    details: 'Validated Regex Formats for VAT, IBAN, IMO, BIMCO, and MARPOL Tokens',
     dependencies: ['NODE-1']
   },
   {
