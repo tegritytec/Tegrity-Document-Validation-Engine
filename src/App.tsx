@@ -34,6 +34,13 @@ export const App: React.FC = () => {
   const [selectedReportFormat, setSelectedReportFormat] = useState<ReportFormat>('PDF');
   const [voyagePublishResult, setVoyagePublishResult] = useState<VoyagePublishResponse | null>(null);
 
+  // Executive Analytics Filters State (F9)
+  const [execStatusFilter, setExecStatusFilter] = useState<string>('ALL');
+  const [execRiskBandFilter, setExecRiskBandFilter] = useState<string>('ALL');
+  const [execDocTypeFilter, setExecDocTypeFilter] = useState<string>('ALL');
+  const [execVendorFilter, setExecVendorFilter] = useState<string>('ALL');
+  const [execSearchQuery, setExecSearchQuery] = useState<string>('');
+
   // Patterns State (F2)
   const [patterns, setPatterns] = useState<PatternRule[]>(MOCK_PATTERNS);
   const [testInput, setTestInput] = useState<string>('GB99823010');
@@ -439,6 +446,39 @@ export const App: React.FC = () => {
     c.documentType.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Executive Analytics Filters Calculations (F9)
+  const execFilteredCases = cases.filter(c => {
+    const matchesSearch = !execSearchQuery || 
+      c.id.toLowerCase().includes(execSearchQuery.toLowerCase()) ||
+      c.vendorName.toLowerCase().includes(execSearchQuery.toLowerCase()) ||
+      c.documentType.toLowerCase().includes(execSearchQuery.toLowerCase());
+    
+    const matchesStatus = execStatusFilter === 'ALL' || c.status === execStatusFilter;
+    const matchesRisk = execRiskBandFilter === 'ALL' || c.riskCategory.toUpperCase() === execRiskBandFilter.toUpperCase();
+    const matchesDocType = execDocTypeFilter === 'ALL' || c.documentType === execDocTypeFilter;
+    const matchesVendor = execVendorFilter === 'ALL' || c.vendorName === execVendorFilter;
+
+    return matchesSearch && matchesStatus && matchesRisk && matchesDocType && matchesVendor;
+  });
+
+  const uniqueDocTypes = Array.from(new Set(cases.map(c => c.documentType)));
+  const uniqueVendors = Array.from(new Set(cases.map(c => c.vendorName)));
+  const uniqueStatuses = Array.from(new Set(cases.map(c => c.status)));
+  const uniqueRiskBands = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'];
+
+  const handleResetExecFilters = () => {
+    setExecStatusFilter('ALL');
+    setExecRiskBandFilter('ALL');
+    setExecDocTypeFilter('ALL');
+    setExecVendorFilter('ALL');
+    setExecSearchQuery('');
+  };
+
+  const execTotalValue = execFilteredCases.reduce((acc, c) => acc + c.claimValue, 0);
+  const execTotalLoss = execFilteredCases.reduce((acc, c) => acc + c.expectedLoss, 0);
+  const execAvgScore = execFilteredCases.length ? Math.round(execFilteredCases.reduce((acc, c) => acc + c.overallScore, 0) / execFilteredCases.length) : 0;
+  const execHighRiskCount = execFilteredCases.filter(c => c.riskCategory === 'HIGH' || c.riskCategory === 'CRITICAL' || c.hasCriticalGap).length;
+
   const isAllSelected = cases.length > 0 && selectedF1FileIds.length === cases.length;
 
   return (
@@ -494,26 +534,155 @@ export const App: React.FC = () => {
 
       {/* Main Panel Content */}
       <main className="main-content">
-        {/* F9: Executive Dashboard */}
+        {/* F9: Executive Dashboard & Analytics with Dynamic Filters */}
         {activeTab === 'F9' && (
           <div>
-            <div className="grid-metrics">
-              {MOCK_EXECUTIVE_METRICS.map((m, idx) => (
-                <div key={idx} className="tile">
-                  <div className="tile-label">{m.label}</div>
-                  <div className="t-big">{m.value}</div>
-                  <div className="tile-sub" style={{ color: m.status === 'POSITIVE' ? 'var(--emerald)' : 'var(--text-muted)' }}>
-                    {m.trend}
-                  </div>
+            {/* Filter Control Bar */}
+            <div className="sub" style={{ marginBottom: '20px' }}>
+              <div className="sub-header" style={{ marginBottom: '16px' }}>
+                <div className="sub-title">
+                  <span className="pip cyan"></span>
+                  🔍 Executive Analytics Filter Panel
+                  <span className="badge badge-indigo" style={{ marginLeft: '12px' }}>
+                    Showing {execFilteredCases.length} of {cases.length} Cases
+                  </span>
                 </div>
-              ))}
+                {(execStatusFilter !== 'ALL' || execRiskBandFilter !== 'ALL' || execDocTypeFilter !== 'ALL' || execVendorFilter !== 'ALL' || execSearchQuery) && (
+                  <button className="btn btn-secondary" style={{ fontSize: '12px', border: '1px solid var(--amber)', color: 'var(--amber)' }} onClick={handleResetExecFilters}>
+                    🔄 Reset All Filters
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Controls Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+                    🔍 Keyword Search
+                  </label>
+                  <input 
+                    type="text" 
+                    className="search-box" 
+                    style={{ width: '100%', height: '36px' }} 
+                    placeholder="Case ID, Vendor, Doc Type..." 
+                    value={execSearchQuery}
+                    onChange={(e) => setExecSearchQuery(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+                    Workflow Status
+                  </label>
+                  <select 
+                    className="search-box" 
+                    style={{ width: '100%', height: '36px', backgroundColor: 'var(--surface-0)', color: 'var(--text-main)' }}
+                    value={execStatusFilter}
+                    onChange={(e) => setExecStatusFilter(e.target.value)}
+                  >
+                    <option value="ALL">All Statuses</option>
+                    {uniqueStatuses.map(st => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+                    Risk Category
+                  </label>
+                  <select 
+                    className="search-box" 
+                    style={{ width: '100%', height: '36px', backgroundColor: 'var(--surface-0)', color: 'var(--text-main)' }}
+                    value={execRiskBandFilter}
+                    onChange={(e) => setExecRiskBandFilter(e.target.value)}
+                  >
+                    <option value="ALL">All Risk Bands</option>
+                    {uniqueRiskBands.map(rb => (
+                      <option key={rb} value={rb}>{rb}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+                    Document Type
+                  </label>
+                  <select 
+                    className="search-box" 
+                    style={{ width: '100%', height: '36px', backgroundColor: 'var(--surface-0)', color: 'var(--text-main)' }}
+                    value={execDocTypeFilter}
+                    onChange={(e) => setExecDocTypeFilter(e.target.value)}
+                  >
+                    <option value="ALL">All Document Types</option>
+                    {uniqueDocTypes.map(dt => (
+                      <option key={dt} value={dt}>{dt}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+                    Vendor / Counterparty
+                  </label>
+                  <select 
+                    className="search-box" 
+                    style={{ width: '100%', height: '36px', backgroundColor: 'var(--surface-0)', color: 'var(--text-main)' }}
+                    value={execVendorFilter}
+                    onChange={(e) => setExecVendorFilter(e.target.value)}
+                  >
+                    <option value="ALL">All Vendors</option>
+                    {uniqueVendors.map(v => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
+            {/* Dynamic Executive Metric Tiles (Recalculates based on Filter Scope) */}
+            <div className="grid-metrics" style={{ marginBottom: '24px' }}>
+              <div className="tile">
+                <div className="tile-label">Scoped Ingested Cases</div>
+                <div className="t-big">{execFilteredCases.length}</div>
+                <div className="tile-sub" style={{ color: 'var(--cyan)' }}>
+                  {((execFilteredCases.length / Math.max(1, cases.length)) * 100).toFixed(0)}% of total queue
+                </div>
+              </div>
+
+              <div className="tile">
+                <div className="tile-label">Scoped Financial Exposure</div>
+                <div className="t-big">${(execTotalValue / 1000).toFixed(1)}k</div>
+                <div className="tile-sub" style={{ color: 'var(--emerald)' }}>
+                  Total claim value in scope
+                </div>
+              </div>
+
+              <div className="tile">
+                <div className="tile-label">Expected Financial Loss ($EL)</div>
+                <div className="t-big" style={{ color: 'var(--crimson)' }}>${(execTotalLoss / 1000).toFixed(1)}k</div>
+                <div className="tile-sub" style={{ color: 'var(--crimson)' }}>
+                  Probability-weighted loss
+                </div>
+              </div>
+
+              <div className="tile">
+                <div className="tile-label">Average Compliance Score</div>
+                <div className="t-big" style={{ color: execAvgScore >= 90 ? 'var(--emerald)' : execAvgScore >= 60 ? 'var(--amber)' : 'var(--crimson)' }}>
+                  {execAvgScore} / 100
+                </div>
+                <div className="tile-sub" style={{ color: 'var(--text-muted)' }}>
+                  High Risk Cases: {execHighRiskCount}
+                </div>
+              </div>
+            </div>
+
+            {/* Active Validation Work Queue Table */}
             <div className="sub">
               <div className="sub-header">
                 <div className="sub-title">
                   <span className="pip cyan"></span>
-                  Active Validation Work Queue ({cases.length} Total Cases)
+                  Active Validation Work Queue ({execFilteredCases.length} Matching Cases)
                 </div>
                 <button className="btn btn-primary" onClick={() => setIsCaseModalOpen(true)}>+ Create Validation Case</button>
               </div>
@@ -533,33 +702,41 @@ export const App: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredCases.map(c => (
-                      <tr key={c.id} onClick={() => setSelectedCase(c)}>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{c.id}</td>
-                        <td>{c.documentType}</td>
-                        <td style={{ fontWeight: 500 }}>{c.vendorName}</td>
-                        <td style={{ fontFamily: 'var(--font-mono)' }}>${c.claimValue.toLocaleString()}</td>
-                        <td>
-                          <span className={`badge ${c.overallScore >= 90 ? 'badge-emerald' : c.overallScore >= 60 ? 'badge-amber' : 'badge-crimson'}`}>
-                            {c.overallScore} / 100
-                          </span>
-                        </td>
-                        <td style={{ fontFamily: 'var(--font-mono)', color: c.expectedLoss > 20000 ? 'var(--crimson)' : 'var(--emerald)' }}>
-                          ${c.expectedLoss.toLocaleString()}
-                        </td>
-                        <td>
-                          <span className={`badge ${c.status === 'PUBLISHED_TO_VOYAGE' ? 'badge-indigo' : c.status === 'APPROVED' ? 'badge-emerald' : c.status === 'FLAGGED' ? 'badge-crimson' : 'badge-amber'}`}>
-                            {c.status}
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }}>Inspect</button>
-                            <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={(e) => handleDeleteCase(c.id, e)}>Delete</button>
-                          </div>
+                    {execFilteredCases.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                          No validation cases match the selected filter criteria. Click "Reset All Filters" to view all cases.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      execFilteredCases.map(c => (
+                        <tr key={c.id} onClick={() => setSelectedCase(c)}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{c.id}</td>
+                          <td>{c.documentType}</td>
+                          <td style={{ fontWeight: 500 }}>{c.vendorName}</td>
+                          <td style={{ fontFamily: 'var(--font-mono)' }}>${c.claimValue.toLocaleString()}</td>
+                          <td>
+                            <span className={`badge ${c.overallScore >= 90 ? 'badge-emerald' : c.overallScore >= 60 ? 'badge-amber' : 'badge-crimson'}`}>
+                              {c.overallScore} / 100
+                            </span>
+                          </td>
+                          <td style={{ fontFamily: 'var(--font-mono)', color: c.expectedLoss > 20000 ? 'var(--crimson)' : 'var(--emerald)' }}>
+                            ${c.expectedLoss.toLocaleString()}
+                          </td>
+                          <td>
+                            <span className={`badge ${c.status === 'PUBLISHED_TO_VOYAGE' ? 'badge-indigo' : c.status === 'APPROVED' ? 'badge-emerald' : c.status === 'FLAGGED' ? 'badge-crimson' : 'badge-amber'}`}>
+                              {c.status}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }}>Inspect</button>
+                              <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={(e) => handleDeleteCase(c.id, e)}>Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
