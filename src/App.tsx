@@ -20,6 +20,9 @@ export const App: React.FC = () => {
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [activeF1CaseId, setActiveF1CaseId] = useState<string>(MOCK_CASES[0].id);
 
+  // F1 Selection & Deselect State for Validation Trigger
+  const [selectedF1FileIds, setSelectedF1FileIds] = useState<string[]>(MOCK_CASES.map(c => c.id));
+
   // F1 Trigger Validation Analysis & Report State
   const [activeAnalysisRun, setActiveAnalysisRun] = useState<ValidationAnalysisRun | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
@@ -73,9 +76,9 @@ export const App: React.FC = () => {
   const [isCaseModalOpen, setIsCaseModalOpen] = useState<boolean>(false);
 
   // Target Case for F1 Validation Analysis
-  const currentF1Case = cases.find(c => c.id === activeF1CaseId) || cases[0];
+  const currentF1Case = cases.find(c => c.id === activeF1CaseId) || cases[0] || MOCK_CASES[0];
 
-  // Multiple Files Ingestion Handler
+  // Ingestion & Selection Handlers
   const processUploadedFiles = (files: FileList | File[]) => {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
@@ -125,12 +128,17 @@ export const App: React.FC = () => {
       };
     });
 
-    setCases([...newCreatedCases, ...cases]);
+    const updatedCases = [...newCreatedCases, ...cases];
+    setCases(updatedCases);
     setActiveF1CaseId(newCreatedCases[0].id);
+
+    // Auto-select newly uploaded files
+    const newIds = newCreatedCases.map(c => c.id);
+    setSelectedF1FileIds(prev => [...newIds, ...prev]);
 
     const names = fileArray.map(f => f.name).join(', ');
     setUploadedFileName(fileArray.length === 1 ? names : `${fileArray.length} files (${names})`);
-    setActiveAnalysisRun(null); // Reset run to allow fresh trigger
+    setActiveAnalysisRun(null);
     setVoyagePublishResult(null);
   };
 
@@ -166,11 +174,54 @@ export const App: React.FC = () => {
     }
   };
 
-  // Trigger Validation Analysis Handler
+  // Selection / Deselection Handlers
+  const handleToggleSelectFile = (id: string) => {
+    if (selectedF1FileIds.includes(id)) {
+      setSelectedF1FileIds(selectedF1FileIds.filter(i => i !== id));
+    } else {
+      setSelectedF1FileIds([...selectedF1FileIds, id]);
+    }
+  };
+
+  const handleSelectAllF1Files = (selectAll: boolean) => {
+    if (selectAll) {
+      setSelectedF1FileIds(cases.map(c => c.id));
+    } else {
+      setSelectedF1FileIds([]);
+    }
+  };
+
+  const handleRemoveF1File = (id: string) => {
+    setCases(cases.filter(c => c.id !== id));
+    setSelectedF1FileIds(selectedF1FileIds.filter(i => i !== id));
+    if (activeF1CaseId === id && cases.length > 1) {
+      setActiveF1CaseId(cases.find(c => c.id !== id)?.id || '');
+    }
+  };
+
+  const handleClearAllF1Files = () => {
+    if (window.confirm('Clear all ingested files from the F1 queue?')) {
+      setCases([]);
+      setSelectedF1FileIds([]);
+      setActiveF1CaseId('');
+      setActiveAnalysisRun(null);
+      setUploadedFileName(null);
+      setVoyagePublishResult(null);
+    }
+  };
+
+  // Batch Trigger Validation Analysis Handler
   const handleTriggerValidationAnalysis = () => {
+    if (selectedF1FileIds.length === 0) {
+      alert('Please select at least one document to trigger validation analysis.');
+      return;
+    }
+
     setIsAnalyzing(true);
     setTimeout(() => {
-      const runRes = runValidationAnalysis(currentF1Case, rules, patterns);
+      // Run analysis on current active target document or first selected document
+      const target = cases.find(c => selectedF1FileIds.includes(c.id)) || currentF1Case;
+      const runRes = runValidationAnalysis(target, rules, patterns);
       setActiveAnalysisRun(runRes);
       setIsAnalyzing(false);
     }, 800);
@@ -224,6 +275,7 @@ export const App: React.FC = () => {
     };
 
     setCases([newCase, ...cases]);
+    setSelectedF1FileIds([newCase.id, ...selectedF1FileIds]);
     setActiveF1CaseId(newCase.id);
     setIsCaseModalOpen(false);
     setNewCaseVendor('');
@@ -233,6 +285,7 @@ export const App: React.FC = () => {
     e.stopPropagation();
     if (window.confirm(`Are you sure you want to delete case ${id}?`)) {
       setCases(cases.filter(c => c.id !== id));
+      setSelectedF1FileIds(selectedF1FileIds.filter(i => i !== id));
       if (selectedCase?.id === id) setSelectedCase(null);
     }
   };
@@ -316,6 +369,8 @@ export const App: React.FC = () => {
     c.vendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.documentType.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const isAllSelected = cases.length > 0 && selectedF1FileIds.length === cases.length;
 
   return (
     <div className="app-container">
@@ -443,21 +498,25 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* F1: Ingestion & OCR with Drag & Drop, Multi-File Selection, Validation Analysis Trigger, Multi-Format Reports & Voyage Publishing */}
+        {/* F1: Ingestion & OCR with Selection/Deselection File Table, Clear List, Drag & Drop, Multi-Format Reports & Voyage Publishing */}
         {activeTab === 'F1' && (
           <div>
             <div className="sub">
               <div className="sub-header">
                 <div className="sub-title">
                   <span className="pip cyan"></span>
-                  F1: Document Ingestion, OCR Parser & Validation Analysis Trigger
+                  F1: Document Ingestion, OCR Parser & Validation Trigger Queue
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button className="btn btn-primary" onClick={handleTriggerValidationAnalysis} disabled={isAnalyzing}>
-                    {isAnalyzing ? '⌛ Running Validation Analysis...' : '⚡ Trigger Validation Analysis'}
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <span className="badge badge-indigo">Selected: {selectedF1FileIds.length} / {cases.length}</span>
+                  <button className="btn btn-primary" onClick={handleTriggerValidationAnalysis} disabled={isAnalyzing || selectedF1FileIds.length === 0}>
+                    {isAnalyzing ? '⌛ Running Validation Analysis...' : `⚡ Trigger Validation (${selectedF1FileIds.length})`}
                   </button>
-                  <button className="btn btn-secondary" style={{ backgroundColor: 'var(--indigo)', color: '#fff' }} onClick={handlePublishToVoyage}>
-                    🚀 Publish to Tegrity Voyage Management
+                  <button className="btn btn-secondary" style={{ backgroundColor: 'var(--indigo)', color: '#fff' }} onClick={handlePublishToVoyage} disabled={!currentF1Case}>
+                    🚀 Publish to Tegrity Voyage
+                  </button>
+                  <button className="btn btn-danger" onClick={handleClearAllF1Files} disabled={cases.length === 0}>
+                    🗑️ Clear File Queue
                   </button>
                 </div>
               </div>
@@ -469,7 +528,7 @@ export const App: React.FC = () => {
                     ✓ Ingested Document Batch: {uploadedFileName}
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    Extracted metadata, verified checksum digests, and set active target case: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{currentF1Case.id}</strong>. Ready for validation analysis.
+                    Extracted metadata, verified checksum digests. Selected {selectedF1FileIds.length} file(s) for validation analysis.
                   </div>
                 </div>
               )}
@@ -486,75 +545,132 @@ export const App: React.FC = () => {
                 </div>
               )}
 
-              {/* Interactive Multi-File Drag & Drop Area + Document Overview */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                <div 
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  style={{ 
-                    border: `2px dashed ${isDraggingOver ? 'var(--cyan)' : 'var(--surface-2)'}`, 
-                    backgroundColor: isDraggingOver ? 'rgba(6, 182, 212, 0.08)' : 'transparent',
-                    borderRadius: '8px', 
-                    padding: '30px', 
-                    textAlign: 'center',
-                    transition: 'all 0.2s ease',
-                    cursor: 'pointer'
-                  }}
-                  onClick={handleFileBrowseClick}
-                >
-                  <div style={{ fontSize: '36px', marginBottom: '8px' }}>📂</div>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>
-                    {isDraggingOver ? 'Drop Files Here to Ingest Documents' : 'Drag & Drop Multiple Files (PDF, PNG, DOCX)'}
-                  </div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '14px' }}>
-                    Select multiple files at once using the Browse Files button.
-                  </div>
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                    <button className="btn btn-primary" onClick={(e) => { e.stopPropagation(); handleFileBrowseClick(); }}>
-                      📁 Browse Multiple Files
-                    </button>
-                    <button className="btn btn-secondary" onClick={(e) => { e.stopPropagation(); handleTriggerValidationAnalysis(); }} disabled={isAnalyzing}>
-                      {isAnalyzing ? 'Analyzing...' : '⚡ Trigger Validation'}
-                    </button>
-                  </div>
+              {/* Interactive Drag & Drop Area */}
+              <div 
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                style={{ 
+                  border: `2px dashed ${isDraggingOver ? 'var(--cyan)' : 'var(--surface-2)'}`, 
+                  backgroundColor: isDraggingOver ? 'rgba(6, 182, 212, 0.08)' : 'transparent',
+                  borderRadius: '8px', 
+                  padding: '24px', 
+                  textAlign: 'center',
+                  transition: 'all 0.2s ease',
+                  cursor: 'pointer',
+                  marginBottom: '24px'
+                }}
+                onClick={handleFileBrowseClick}
+              >
+                <div style={{ fontSize: '32px', marginBottom: '6px' }}>📂</div>
+                <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '2px' }}>
+                  {isDraggingOver ? 'Drop Files Here to Ingest Documents' : 'Drag & Drop Multiple Files (PDF, PNG, DOCX)'}
                 </div>
-
-                <div>
-                  <div className="callout">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <div className="callout-title" style={{ color: 'var(--cyan)' }}>Current Active Target Document</div>
-                      <select 
-                        className="search-box" 
-                        style={{ width: '160px', padding: '4px 8px', fontSize: '11px' }}
-                        value={activeF1CaseId}
-                        onChange={(e) => setActiveF1CaseId(e.target.value)}
-                      >
-                        {cases.map(c => (
-                          <option key={c.id} value={c.id}>{c.id} - {c.vendorName.slice(0, 15)}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>
-                      <div>[CASE-ID]: {currentF1Case.id}</div>
-                      <div>[VENDOR]: {currentF1Case.vendorName}</div>
-                      <div>[DOC-TYPE]: {currentF1Case.documentType} (${currentF1Case.claimValue.toLocaleString()})</div>
-                      <div>[OCR-QUALITY]: {currentF1Case.metadata.ocrConfidence || 98.2}% Average Confidence</div>
-                      <div>[TABLES]: {currentF1Case.metadata.lineItemCount || 8} Line Items Parsed</div>
-                    </div>
-                  </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '12px' }}>
+                  Or click to browse and select multiple files from your computer.
                 </div>
+                <button className="btn btn-primary" onClick={(e) => { e.stopPropagation(); handleFileBrowseClick(); }}>
+                  📁 Browse Multiple Files
+                </button>
+              </div>
+
+              {/* Ingested Files Display Table with Checkboxes */}
+              <div className="sub-header" style={{ marginBottom: '12px', borderBottom: 'none', paddingBottom: 0 }}>
+                <div className="sub-title" style={{ fontSize: '14px' }}>
+                  Ingested Files Queue ({cases.length} Documents)
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => handleSelectAllF1Files(!isAllSelected)}>
+                    {isAllSelected ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="dtable-wrapper">
+                <table className="dtable">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px', textAlign: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={isAllSelected}
+                          onChange={(e) => handleSelectAllF1Files(e.target.checked)}
+                        />
+                      </th>
+                      <th>Case ID / Doc ID</th>
+                      <th>Document Type</th>
+                      <th>Vendor Name</th>
+                      <th>Value (USD)</th>
+                      <th>OCR Quality</th>
+                      <th>Target Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cases.map(c => {
+                      const isSelected = selectedF1FileIds.includes(c.id);
+                      const isActiveTarget = c.id === activeF1CaseId;
+
+                      return (
+                        <tr 
+                          key={c.id} 
+                          style={{ backgroundColor: isActiveTarget ? 'rgba(6, 182, 212, 0.08)' : 'transparent' }}
+                          onClick={() => setActiveF1CaseId(c.id)}
+                        >
+                          <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                            <input 
+                              type="checkbox" 
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectFile(c.id)}
+                            />
+                          </td>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                            {c.id} <span style={{ color: 'var(--text-dim)', fontSize: '11px' }}>({c.documentId})</span>
+                          </td>
+                          <td>{c.documentType}</td>
+                          <td style={{ fontWeight: 500 }}>{c.vendorName}</td>
+                          <td style={{ fontFamily: 'var(--font-mono)' }}>${c.claimValue.toLocaleString()}</td>
+                          <td>
+                            <span className="badge badge-emerald">{c.metadata.ocrConfidence || 98.2}%</span>
+                          </td>
+                          <td>
+                            <span className={`badge ${isSelected ? 'badge-emerald' : 'badge-amber'}`}>
+                              {isSelected ? 'SELECTED FOR VALIDATION' : 'DESELECTED'}
+                            </span>
+                          </td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button 
+                                className={`btn ${isSelected ? 'btn-secondary' : 'btn-primary'}`} 
+                                style={{ padding: '3px 8px', fontSize: '11px' }}
+                                onClick={() => handleToggleSelectFile(c.id)}
+                              >
+                                {isSelected ? 'Deselect' : 'Select'}
+                              </button>
+                              <button 
+                                className="btn btn-danger" 
+                                style={{ padding: '3px 8px', fontSize: '11px' }}
+                                onClick={() => handleRemoveF1File(c.id)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
 
             {/* Validation Analysis Findings & Risk Grade Output */}
-            {activeAnalysisRun && (
+            {activeAnalysisRun && currentF1Case && (
               <div className="sub">
                 <div className="sub-header">
                   <div className="sub-title">
                     <span className="pip emerald"></span>
-                    Validation Analysis Results (Gap Analysis & Risk Grading)
+                    Validation Analysis Results for Active Target: {currentF1Case.id} ({currentF1Case.vendorName})
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                     Execution Time: {activeAnalysisRun.executionTimeMs}ms | Run ID: {activeAnalysisRun.runId}
@@ -618,49 +734,51 @@ export const App: React.FC = () => {
             )}
 
             {/* Multi-Format Report Generator Section */}
-            <div className="sub">
-              <div className="sub-header">
-                <div className="sub-title">
-                  <span className="pip cyan"></span>
-                  Multi-Format Report Generator (PowerPoint, PDF, Word Document)
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                <div>
-                  <h4 style={{ marginBottom: '12px' }}>1. Select Report Target & Scope</h4>
-                  <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                    <button 
-                      className={`btn ${selectedReportType === 'Executive Summary' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setSelectedReportType('Executive Summary')}
-                    >
-                      Executive Summary Report
-                    </button>
-                    <button 
-                      className={`btn ${selectedReportType === 'Detailed Audit Report' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setSelectedReportType('Detailed Audit Report')}
-                    >
-                      Detailed Technical Audit Report
-                    </button>
+            {currentF1Case && (
+              <div className="sub">
+                <div className="sub-header">
+                  <div className="sub-title">
+                    <span className="pip cyan"></span>
+                    Multi-Format Report Generator (PowerPoint, PDF, Word Document)
                   </div>
                 </div>
 
-                <div>
-                  <h4 style={{ marginBottom: '12px' }}>2. Generate & Download File</h4>
-                  <div style={{ display: 'flex', gap: '12px' }}>
-                    <button className="btn btn-secondary" style={{ border: '1px solid #e11d48', color: '#fda4af' }} onClick={() => handleDownloadReport('PDF')}>
-                      📄 Download PDF (.pdf)
-                    </button>
-                    <button className="btn btn-secondary" style={{ border: '1px solid #2563eb', color: '#93c5fd' }} onClick={() => handleDownloadReport('DOCX')}>
-                      📝 Download Word (.docx)
-                    </button>
-                    <button className="btn btn-secondary" style={{ border: '1px solid #d97706', color: '#fde68a' }} onClick={() => handleDownloadReport('PPTX')}>
-                      📊 Download PowerPoint (.pptx)
-                    </button>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                  <div>
+                    <h4 style={{ marginBottom: '12px' }}>1. Select Report Target & Scope</h4>
+                    <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                      <button 
+                        className={`btn ${selectedReportType === 'Executive Summary' ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setSelectedReportType('Executive Summary')}
+                      >
+                        Executive Summary Report
+                      </button>
+                      <button 
+                        className={`btn ${selectedReportType === 'Detailed Audit Report' ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setSelectedReportType('Detailed Audit Report')}
+                      >
+                        Detailed Technical Audit Report
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 style={{ marginBottom: '12px' }}>2. Generate & Download File</h4>
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <button className="btn btn-secondary" style={{ border: '1px solid #e11d48', color: '#fda4af' }} onClick={() => handleDownloadReport('PDF')}>
+                        📄 Download PDF (.pdf)
+                      </button>
+                      <button className="btn btn-secondary" style={{ border: '1px solid #2563eb', color: '#93c5fd' }} onClick={() => handleDownloadReport('DOCX')}>
+                        📝 Download Word (.docx)
+                      </button>
+                      <button className="btn btn-secondary" style={{ border: '1px solid #d97706', color: '#fde68a' }} onClick={() => handleDownloadReport('PPTX')}>
+                        📊 Download PowerPoint (.pptx)
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
