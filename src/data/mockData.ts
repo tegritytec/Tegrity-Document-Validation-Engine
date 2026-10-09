@@ -1,4 +1,4 @@
-import { CaseItem, PatternRule, ValidationRule, LineageNode, LearningFeedback, ExecutiveMetric } from '../types/tdv';
+import { CaseItem, PatternRule, ValidationRule, LineageNode, LearningFeedback, ExecutiveMetric, AnonymizedHistoricalCase } from '../types/tdv';
 
 export const MOCK_CASES: CaseItem[] = [
   {
@@ -352,4 +352,20 @@ export const MOCK_EXECUTIVE_METRICS: ExecutiveMetric[] = [
     trend: '-38% handling time reduction',
     status: 'NEUTRAL'
   }
+];
+
+// Anonymized Dataset for What-If Scenario Research
+export const MOCK_ANONYMIZED_HISTORICAL_CASES: AnonymizedHistoricalCase[] = [
+  { anonymizedId: 'ANO-101', documentType: 'Commercial Tax Invoice', sector: 'Maritime & Freight', claimValue: 185000, currency: 'USD', originalRiskScore: 65, originalExpectedLoss: 42000, vatStatus: 'REVOKED', rateDiscrepancyPct: 4.5, aisLocationMismatch: false, sanctionsMatchRatio: 45, historicalOutcome: 'REJECTED' },
+  { anonymizedId: 'ANO-102', documentType: 'Bill of Lading', sector: 'Maritime & Freight', claimValue: 640000, currency: 'USD', originalRiskScore: 38, originalExpectedLoss: 210000, vatStatus: 'VALID', rateDiscrepancyPct: 1.2, aisLocationMismatch: true, sanctionsMatchRatio: 88, historicalOutcome: 'REJECTED' },
+  { anonymizedId: 'ANO-103', documentType: 'Certificate of Origin', sector: 'Energy & Utilities', claimValue: 45000, currency: 'EUR', originalRiskScore: 94, originalExpectedLoss: 0, vatStatus: 'VALID', rateDiscrepancyPct: 0, aisLocationMismatch: false, sanctionsMatchRatio: 12, historicalOutcome: 'APPROVED' },
+  { anonymizedId: 'ANO-104', documentType: 'Marine Insurance Policy', sector: 'Maritime & Freight', claimValue: 920000, currency: 'USD', originalRiskScore: 91, originalExpectedLoss: 5000, vatStatus: 'VALID', rateDiscrepancyPct: 0.5, aisLocationMismatch: false, sanctionsMatchRatio: 25, historicalOutcome: 'APPROVED' },
+  { anonymizedId: 'ANO-105', documentType: 'Commercial Tax Invoice', sector: 'Manufacturing', claimValue: 280000, currency: 'USD', originalRiskScore: 72, originalExpectedLoss: 28000, vatStatus: 'EXPIRED', rateDiscrepancyPct: 3.2, aisLocationMismatch: false, sanctionsMatchRatio: 30, historicalOutcome: 'ESCALATED' },
+  { anonymizedId: 'ANO-106', documentType: 'Charter Party Agreement', sector: 'Maritime & Freight', claimValue: 1250000, currency: 'USD', originalRiskScore: 55, originalExpectedLoss: 380000, vatStatus: 'VALID', rateDiscrepancyPct: 6.8, aisLocationMismatch: true, sanctionsMatchRatio: 82, historicalOutcome: 'REJECTED' },
+  { anonymizedId: 'ANO-107', documentType: 'Commercial Tax Invoice', sector: 'Technology & Services', claimValue: 88000, currency: 'USD', originalRiskScore: 88, originalExpectedLoss: 2500, vatStatus: 'VALID', rateDiscrepancyPct: 1.8, aisLocationMismatch: false, sanctionsMatchRatio: 15, historicalOutcome: 'APPROVED' },
+  { anonymizedId: 'ANO-108', documentType: 'Bill of Lading', sector: 'Manufacturing', claimValue: 310000, currency: 'USD', originalRiskScore: 61, originalExpectedLoss: 75000, vatStatus: 'REVOKED', rateDiscrepancyPct: 0, aisLocationMismatch: false, sanctionsMatchRatio: 76, historicalOutcome: 'ESCALATED' },
+  { anonymizedId: 'ANO-109', documentType: 'Certificate of Origin', sector: 'Manufacturing', claimValue: 22000, currency: 'EUR', originalRiskScore: 98, originalExpectedLoss: 0, vatStatus: 'VALID', rateDiscrepancyPct: 0, aisLocationMismatch: false, sanctionsMatchRatio: 5, historicalOutcome: 'APPROVED' },
+  { anonymizedId: 'ANO-110', documentType: 'Commercial Tax Invoice', sector: 'Energy & Utilities', claimValue: 450000, currency: 'USD', originalRiskScore: 49, originalExpectedLoss: 165000, vatStatus: 'VALID', rateDiscrepancyPct: 8.4, aisLocationMismatch: false, sanctionsMatchRatio: 86, historicalOutcome: 'REJECTED' },
+  { anonymizedId: 'ANO-111', documentType: 'Marine Insurance Policy', sector: 'Energy & Utilities', claimValue: 1100000, currency: 'USD', originalRiskScore: 89, originalExpectedLoss: 12000, vatStatus: 'VALID', rateDiscrepancyPct: 0.8, aisLocationMismatch: false, sanctionsMatchRatio: 40, historicalOutcome: 'APPROVED' },
+  { anonymizedId: 'ANO-112', documentType: 'Commercial Tax Invoice', sector: 'Technology & Services', claimValue: 64000, currency: 'USD', originalRiskScore: 92, originalExpectedLoss: 0, vatStatus: 'VALID', rateDiscrepancyPct: 0.2, aisLocationMismatch: false, sanctionsMatchRatio: 10, historicalOutcome: 'APPROVED' }
 ];

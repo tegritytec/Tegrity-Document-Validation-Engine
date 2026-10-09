@@ -16,6 +16,7 @@ export type CaseStatus =
   | 'Pending approval'
   | 'FLAGGED'
   | 'APPROVED'
+  | 'REJECTED'
   | 'Ratified'
   | 'Reported'
   | 'Learning captured';
@@ -116,164 +117,48 @@ export interface ExecutiveMetric {
   status: 'POSITIVE' | 'NEUTRAL' | 'WARNING';
 }
 
-export interface DocumentFile {
-  id: string;
+// Anonymized Historical Case for What-If Scenarios
+export interface AnonymizedHistoricalCase {
+  anonymizedId: string;
+  documentType: string;
+  sector: 'Maritime & Freight' | 'Energy & Utilities' | 'Manufacturing' | 'Technology & Services';
+  claimValue: number;
+  currency: string;
+  originalRiskScore: number;
+  originalExpectedLoss: number;
+  vatStatus: 'VALID' | 'REVOKED' | 'EXPIRED' | 'UNCHECKED';
+  rateDiscrepancyPct: number;
+  aisLocationMismatch: boolean;
+  sanctionsMatchRatio: number;
+  historicalOutcome: 'APPROVED' | 'REJECTED' | 'ESCALATED';
+}
+
+export interface HistoricalFilter {
+  sector: string;
+  documentType: string;
+  minValue: number;
+  maxValue: number;
+  riskBand: string;
+}
+
+export interface WhatIfScenarioParams {
   name: string;
-  type: 'Charter Party' | 'Bill of Lading' | 'Fixture Recap' | 'Rider Clause' | 'Engagement Letter' | 'Addendum';
-  fileUri: string;
-  sha256: string;
-  ocrQuality: number;
-  pages: number;
-  precedenceOrder: number;
-  uploadedAt: string;
+  vatStrictnessWeight: number; // 0.5x to 2.0x
+  rateTolerancePct: number; // 0% to 10%
+  aisMismatchStrictness: number; // 1.0x to 3.0x
+  sanctionsFuzzyThreshold: number; // 70% to 95%
+  autoApproveScoreFloor: number; // 80 to 95
 }
 
-export interface ExtractedField {
-  id: string;
-  name: string;
-  value: string;
-  confidence: number;
-  editedBy?: string;
-}
-
-export interface ClauseSpan {
-  start: number;
-  end: number;
-  page: number;
-}
-
-export interface DocumentClause {
-  id: string;
-  docId: string;
-  number: string;
-  heading: string;
-  text: string;
-  span: ClauseSpan;
-  category: string;
-  amendsClauseId?: string;
-}
-
-export interface ComplianceRule {
-  id: string;
-  version: string;
-  title: string;
-  sourceRef: string;
-  domain: 'Sanctions' | 'Environmental' | 'Safety' | 'Cargo Liability' | 'Commercial' | 'Insurance';
-  jurisdiction: string;
-  severity: Severity;
-  logicDescription: string;
-  modelClause: string;
-  validFrom: string;
-  validTo?: string;
-  status: 'Draft' | 'Active' | 'Superseded' | 'Retired';
-}
-
-export interface ClausePattern {
-  id: string;
-  version: string;
-  category: string;
-  canonicalText: string;
-  disputeRate: number;
-  successRate: number;
-  impactBand: RiskBand;
-  medianImpactUsd: number;
-  confidence: number;
-  kAnonymityLevel: number;
-  status: 'Candidate' | 'Active' | 'Deprecated';
-}
-
-export interface Finding {
-  id: string;
-  runId: string;
-  clauseId: string;
-  docId: string;
-  type: 'Compliance gap' | 'Conflict' | 'Weak safeguard' | 'Safeguard opportunity' | 'Best practice';
-  status: 'Open' | 'Accepted' | 'Rejected' | 'Modified' | 'Needs review';
-  ruleIds: string[];
-  patternIds: string[];
-  severity: Severity;
-  probability: number;
-  exposureUsd: { low: number; likely: number; high: number };
-  findingScore: number;
-  confidence: number;
-  recommendationAction: 'add' | 'amend' | 'delete' | 'negotiate' | 'accept_with_mitigation';
-  proposedText: string;
-  rationale: string;
-  estimatedEffort: number;
-  smeComment?: string;
-}
-
-export interface WhatIfScenario {
-  id: string;
-  name: string;
-  changes: Record<string, { newText?: string; modifiedExposureUsd?: number; acceptedWithMitigation?: boolean }>;
-  caseScore: number;
-  expectedLossUsd: number;
-  createdBy: string;
-  createdAt: string;
-}
-
-export interface RatificationDecision {
-  id: string;
-  caseId: string;
-  scenarioId: string;
-  version: string;
-  tier: 'T1 Standard' | 'T2 Elevated' | 'T3 Critical';
-  status: 'Pending' | 'Ratified' | 'Returned' | 'Rejected';
-  note: string;
-  approverLevel1?: string;
-  approverLevel2?: string;
-  ratifiedAt?: string;
-  snapshotHash?: string;
-}
-
-export interface LineageEvent {
-  id: string;
-  prevHash: string;
-  hash: string;
-  actor: string;
-  role: Role;
-  action: string;
-  objectRef: string;
-  diff: string;
-  timestamp: string;
-}
-
-export interface LearningPackage {
-  id: string;
-  sourceDecisionId: string;
-  clauseCategory: string;
-  anonymizedPayload: string;
-  privacyCheckPassed: boolean;
-  kLevelAchieved: number;
-  proposedPatternId?: string;
-  curatorAction: 'Pending' | 'Approved' | 'Merged' | 'Rejected';
-}
-
-export interface GeneratedReport {
-  id: string;
-  decisionId: string;
-  type: 'Executive Summary' | 'Detailed Audit Report' | 'DOCX Redline Pack';
-  createdAt: string;
-  fileUri: string;
-  redacted: boolean;
-  shareUrl?: string;
-}
-
-export interface CaseData {
-  id: string;
-  title: string;
-  trade: string;
-  charterType: 'Voyage Charter' | 'Time Charter' | 'Bareboat Charter' | 'COA';
-  effectiveDate: string;
-  status: CaseStatus;
-  riskScore: number;
-  riskBand: RiskBand;
-  owner: string;
-  documents: DocumentFile[];
-  extractedFields: ExtractedField[];
-  clauses: DocumentClause[];
-  findings: Finding[];
-  scenarios: WhatIfScenario[];
-  decision?: RatificationDecision;
+export interface ScenarioSimulationResult {
+  scopedTotalCount: number;
+  scopedTotalValue: number;
+  baselineAutoApproveCount: number;
+  baselineAutoApprovePct: number;
+  baselineTotalExpectedLoss: number;
+  scenarioAutoApproveCount: number;
+  scenarioAutoApprovePct: number;
+  scenarioTotalExpectedLoss: number;
+  netLossDelta: number; // Positive = savings, negative = increased exposure
+  recommendedWeightUpdates: { ruleId: string; recommendedWeight: number; rationale: string }[];
 }

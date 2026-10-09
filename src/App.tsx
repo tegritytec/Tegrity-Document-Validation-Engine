@@ -1,21 +1,28 @@
 import React, { useState } from 'react';
-import { MOCK_CASES, MOCK_PATTERNS, MOCK_RULES, MOCK_LINEAGE_GRAPH, MOCK_FEEDBACK_QUEUE, MOCK_EXECUTIVE_METRICS } from './data/mockData';
-import { CaseItem, FindingItem, PatternRule, ValidationRule, LearningFeedback } from './types/tdv';
+import { MOCK_CASES, MOCK_PATTERNS, MOCK_RULES, MOCK_LINEAGE_GRAPH, MOCK_FEEDBACK_QUEUE, MOCK_EXECUTIVE_METRICS, MOCK_ANONYMIZED_HISTORICAL_CASES } from './data/mockData';
+import { CaseItem, FindingItem, PatternRule, ValidationRule, LearningFeedback, HistoricalFilter, WhatIfScenarioParams } from './types/tdv';
 import { evaluateCaseScoring } from './services/scoringEngine';
+import { filterHistoricalDataset, simulateWhatIfScenario } from './services/scenarioEngine';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('F9');
+  
+  // CRUD State for Cases (F1/F9)
   const [cases, setCases] = useState<CaseItem[]>(MOCK_CASES);
   const [selectedCase, setSelectedCase] = useState<CaseItem | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  
-  // F2 Pattern State
+
+  // CRUD State for Patterns (F2)
   const [patterns, setPatterns] = useState<PatternRule[]>(MOCK_PATTERNS);
   const [testInput, setTestInput] = useState<string>('GB99823010');
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [editingPattern, setEditingPattern] = useState<PatternRule | null>(null);
+  const [isPatternModalOpen, setIsPatternModalOpen] = useState<boolean>(false);
 
-  // F3 Rules State
+  // CRUD State for Rules (F3)
   const [rules, setRules] = useState<ValidationRule[]>(MOCK_RULES);
+  const [editingRule, setEditingRule] = useState<ValidationRule | null>(null);
+  const [isRuleModalOpen, setIsRuleModalOpen] = useState<boolean>(false);
 
   // F5 Scoring Simulator State
   const [simProb, setSimProb] = useState<number>(0.85);
@@ -26,12 +33,125 @@ export const App: React.FC = () => {
   const [feedbackList, setFeedbackList] = useState<LearningFeedback[]>(MOCK_FEEDBACK_QUEUE);
   const [feedbackComment, setFeedbackComment] = useState<string>('');
 
-  // Handle case click
-  const handleOpenCase = (c: CaseItem) => {
-    setSelectedCase(c);
+  // F10 What-If Analytics State
+  const [historicalFilter, setHistoricalFilter] = useState<HistoricalFilter>({
+    sector: 'ALL',
+    documentType: 'ALL',
+    minValue: 0,
+    maxValue: 2000000,
+    riskBand: 'ALL'
+  });
+
+  const [scenarioParams, setScenarioParams] = useState<WhatIfScenarioParams>({
+    name: 'Q4 Compliance Audit Scenario',
+    vatStrictnessWeight: 1.2,
+    rateTolerancePct: 3.0,
+    aisMismatchStrictness: 1.5,
+    sanctionsFuzzyThreshold: 80,
+    autoApproveScoreFloor: 90
+  });
+
+  // Modal forms state
+  const [newCaseVendor, setNewCaseVendor] = useState<string>('');
+  const [newCaseDocType, setNewCaseDocType] = useState<string>('Commercial Tax Invoice');
+  const [newCaseValue, setNewCaseValue] = useState<number>(75000);
+  const [isCaseModalOpen, setIsCaseModalOpen] = useState<boolean>(false);
+
+  // Filtered cases for list
+  const filteredCases = cases.filter(c => 
+    c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.vendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.documentType.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // CRUD Handlers for Cases
+  const handleCreateCase = () => {
+    if (!newCaseVendor) return;
+    const newCase: CaseItem = {
+      id: `TDV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      documentId: `DOC-${Math.floor(10000 + Math.random() * 90000)}`,
+      documentType: newCaseDocType,
+      vendorName: newCaseVendor,
+      submissionDate: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      claimValue: newCaseValue,
+      currency: 'USD',
+      status: 'IN_REVIEW',
+      assignedAnalyst: 'Ashwani Sethi (Lead Auditor)',
+      overallScore: 82,
+      expectedLoss: Math.round(newCaseValue * 0.1),
+      riskCategory: newCaseValue > 100000 ? 'HIGH' : 'MEDIUM',
+      hasCriticalGap: false,
+      findings: [
+        {
+          id: `FND-${Math.floor(10 + Math.random() * 90)}`,
+          ruleId: 'RULE-AMT-002',
+          ruleName: 'Line Item Quantity x Rate Check',
+          severity: 'MEDIUM',
+          probability: 0.35,
+          exposure: newCaseValue * 0.1,
+          expectedLoss: newCaseValue * 0.035,
+          description: 'Standard arithmetic validation flag pending auditor confirmation.',
+          remediation: 'Verify rate quote against SAP contract master.'
+        }
+      ],
+      metadata: { ocrConfidence: 97.5, lineItemCount: 6 },
+      lineageId: `LIN-${Math.floor(1000 + Math.random() * 9000)}-DAG`
+    };
+
+    setCases([newCase, ...cases]);
+    setIsCaseModalOpen(false);
+    setNewCaseVendor('');
   };
 
-  // Handle pattern test
+  const handleDeleteCase = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm(`Are you sure you want to delete case ${id}?`)) {
+      setCases(cases.filter(c => c.id !== id));
+      if (selectedCase?.id === id) setSelectedCase(null);
+    }
+  };
+
+  // CRUD Handlers for Patterns
+  const handleSavePattern = () => {
+    if (!editingPattern?.name || !editingPattern?.regexPattern) return;
+    if (patterns.some(p => p.id === editingPattern.id)) {
+      setPatterns(patterns.map(p => p.id === editingPattern.id ? editingPattern : p));
+    } else {
+      setPatterns([...patterns, editingPattern]);
+    }
+    setIsPatternModalOpen(false);
+    setEditingPattern(null);
+  };
+
+  const handleDeletePattern = (id: string) => {
+    if (window.confirm(`Delete pattern ${id}?`)) {
+      setPatterns(patterns.filter(p => p.id !== id));
+    }
+  };
+
+  // CRUD Handlers for Rules
+  const handleSaveRule = () => {
+    if (!editingRule?.name || !editingRule?.code) return;
+    if (rules.some(r => r.id === editingRule.id)) {
+      setRules(rules.map(r => r.id === editingRule.id ? editingRule : r));
+    } else {
+      setRules([...rules, editingRule]);
+    }
+    setIsRuleModalOpen(false);
+    setEditingRule(null);
+  };
+
+  const handleDeleteRule = (id: string) => {
+    if (window.confirm(`Delete validation rule ${id}?`)) {
+      setRules(rules.filter(r => r.id !== id));
+    }
+  };
+
+  const handleToggleRule = (id: string) => {
+    setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
+  };
+
+  // Pattern Testing
   const handleTestPattern = (pat: PatternRule) => {
     try {
       const regex = new RegExp(pat.regexPattern);
@@ -42,17 +162,30 @@ export const App: React.FC = () => {
     }
   };
 
-  // Toggle rule status
-  const handleToggleRule = (id: string) => {
-    setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
-  };
+  // What-If Simulation Evaluation
+  const scopedHistoricalCases = filterHistoricalDataset(MOCK_ANONYMIZED_HISTORICAL_CASES, historicalFilter);
+  const scenarioResult = simulateWhatIfScenario(scopedHistoricalCases, scenarioParams);
 
-  // Filter cases
-  const filteredCases = cases.filter(c => 
-    c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.vendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.documentType.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Publish Scenario Recommendation to F8 Continuous Learning
+  const handlePublishScenarioToLearning = () => {
+    const newFeedbacks: LearningFeedback[] = scenarioResult.recommendedWeightUpdates.map((rec, idx) => ({
+      id: `FB-SCENARIO-${Date.now()}-${idx}`,
+      caseId: 'HISTORICAL-BATCH-ANALYSIS',
+      findingId: rec.ruleId,
+      auditorName: 'What-If Scenario Sandbox Engine',
+      originalScore: 75,
+      adjustedScore: 88,
+      auditorDecision: 'UPDATE_RULE_WEIGHT',
+      reasonCode: 'SCENARIO_RESEARCH_OPTIMIZATION',
+      comment: rec.rationale,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      learningStatus: 'PROPOSED_TRAINING_WEIGHT'
+    }));
+
+    setFeedbackList([...newFeedbacks, ...feedbackList]);
+    alert(`Successfully published ${newFeedbacks.length} rule weight optimization recommendations to Continuous Learning (F8)!`);
+    setActiveTab('F8');
+  };
 
   return (
     <div className="app-container">
@@ -74,15 +207,17 @@ export const App: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
+          <button className="btn btn-primary" onClick={() => setIsCaseModalOpen(true)}>+ New Case</button>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
             User: <strong style={{ color: 'var(--text-main)' }}>Ashwani Sethi (Lead Auditor)</strong>
           </div>
         </div>
       </header>
 
-      {/* Navigation Tabs F1 - F9 */}
+      {/* Navigation Tabs F1 - F10 */}
       <nav className="nav-tabs">
         <button className={`nav-tab ${activeTab === 'F9' ? 'active' : ''}`} onClick={() => setActiveTab('F9')}>F9: Executive Analytics</button>
+        <button className={`nav-tab ${activeTab === 'F10' ? 'active' : ''}`} onClick={() => setActiveTab('F10')}>F10: What-If Analytics Sandbox</button>
         <button className={`nav-tab ${activeTab === 'F1' ? 'active' : ''}`} onClick={() => setActiveTab('F1')}>F1: Ingestion & OCR</button>
         <button className={`nav-tab ${activeTab === 'F2' ? 'active' : ''}`} onClick={() => setActiveTab('F2')}>F2: Pattern Library</button>
         <button className={`nav-tab ${activeTab === 'F3' ? 'active' : ''}`} onClick={() => setActiveTab('F3')}>F3: Rule Catalog</button>
@@ -114,9 +249,9 @@ export const App: React.FC = () => {
               <div className="sub-header">
                 <div className="sub-title">
                   <span className="pip cyan"></span>
-                  Active Validation Work Queue (High Risk & Escalations)
+                  Active Validation Work Queue ({cases.length} Total Cases)
                 </div>
-                <button className="btn btn-secondary" onClick={() => setActiveTab('F1')}>+ Upload Document</button>
+                <button className="btn btn-primary" onClick={() => setIsCaseModalOpen(true)}>+ Create Validation Case</button>
               </div>
 
               <div className="dtable-wrapper">
@@ -130,12 +265,12 @@ export const App: React.FC = () => {
                       <th>Compounded Score</th>
                       <th>Expected Loss</th>
                       <th>Status</th>
-                      <th>Action</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredCases.map(c => (
-                      <tr key={c.id} onClick={() => handleOpenCase(c)}>
+                      <tr key={c.id} onClick={() => setSelectedCase(c)}>
                         <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{c.id}</td>
                         <td>{c.documentType}</td>
                         <td style={{ fontWeight: 500 }}>{c.vendorName}</td>
@@ -154,7 +289,253 @@ export const App: React.FC = () => {
                           </span>
                         </td>
                         <td>
-                          <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }}>Inspect Blade</button>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }}>Inspect</button>
+                            <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={(e) => handleDeleteCase(c.id, e)}>Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* F10: What-If Analytics & Scenario Sandbox */}
+        {activeTab === 'F10' && (
+          <div>
+            <div className="sub">
+              <div className="sub-header">
+                <div className="sub-title">
+                  <span className="pip cyan"></span>
+                  F10: Analytical What-If Scenario Sandbox & Historical Dataset Scoping
+                </div>
+                <button className="btn btn-primary" onClick={handlePublishScenarioToLearning}>
+                  ⚡ Publish Recommendations to Continuous Learning (F8)
+                </button>
+              </div>
+
+              {/* Scoping Filter Bar */}
+              <div className="callout" style={{ backgroundColor: 'var(--surface-1)', border: '1px solid var(--surface-2)' }}>
+                <div className="callout-title" style={{ color: 'var(--cyan)' }}>Anonymized Historical Dataset Scoping Filters</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginTop: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>Industry Sector</label>
+                    <select 
+                      className="search-box" 
+                      style={{ width: '100%' }}
+                      value={historicalFilter.sector}
+                      onChange={(e) => setHistoricalFilter({ ...historicalFilter, sector: e.target.value })}
+                    >
+                      <option value="ALL">All Sectors</option>
+                      <option value="Maritime & Freight">Maritime & Freight</option>
+                      <option value="Energy & Utilities">Energy & Utilities</option>
+                      <option value="Manufacturing">Manufacturing</option>
+                      <option value="Technology & Services">Technology & Services</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>Document Type</label>
+                    <select 
+                      className="search-box" 
+                      style={{ width: '100%' }}
+                      value={historicalFilter.documentType}
+                      onChange={(e) => setHistoricalFilter({ ...historicalFilter, documentType: e.target.value })}
+                    >
+                      <option value="ALL">All Document Types</option>
+                      <option value="Commercial Tax Invoice">Commercial Tax Invoice</option>
+                      <option value="Bill of Lading">Bill of Lading</option>
+                      <option value="Certificate of Origin">Certificate of Origin</option>
+                      <option value="Marine Insurance Policy">Marine Insurance Policy</option>
+                      <option value="Charter Party Agreement">Charter Party Agreement</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>Max Claim Value Range</label>
+                    <input 
+                      type="range" 
+                      min="50000" 
+                      max="2000000" 
+                      step="50000"
+                      value={historicalFilter.maxValue}
+                      onChange={(e) => setHistoricalFilter({ ...historicalFilter, maxValue: parseInt(e.target.value) })}
+                      style={{ width: '100%' }}
+                    />
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Up to ${historicalFilter.maxValue.toLocaleString()}</div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>Risk Profile</label>
+                    <select 
+                      className="search-box" 
+                      style={{ width: '100%' }}
+                      value={historicalFilter.riskBand}
+                      onChange={(e) => setHistoricalFilter({ ...historicalFilter, riskBand: e.target.value })}
+                    >
+                      <option value="ALL">All Risk Bands</option>
+                      <option value="HIGH_CRITICAL">High Risk & Critical Cases Only</option>
+                      <option value="LOW">Low Risk Auto-Approve Cases Only</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Scenario Tuning Parameters & Real-time Metrics */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '20px' }}>
+                <div>
+                  <h4 style={{ marginBottom: '16px', color: 'var(--text-main)' }}>Scenario Variable Perturbations</h4>
+                  
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      VAT Verification Strictness Multiplier: {scenarioParams.vatStrictnessWeight}x
+                    </label>
+                    <input 
+                      type="range" 
+                      min="0.5" 
+                      max="2.5" 
+                      step="0.1" 
+                      value={scenarioParams.vatStrictnessWeight}
+                      onChange={(e) => setScenarioParams({ ...scenarioParams, vatStrictnessWeight: parseFloat(e.target.value) })}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Line Item Rate Arithmetic Tolerance Window: {scenarioParams.rateTolerancePct}%
+                    </label>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="10" 
+                      step="0.5" 
+                      value={scenarioParams.rateTolerancePct}
+                      onChange={(e) => setScenarioParams({ ...scenarioParams, rateTolerancePct: parseFloat(e.target.value) })}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      AIS Vessel Coordinate Mismatch Strictness: {scenarioParams.aisMismatchStrictness}x
+                    </label>
+                    <input 
+                      type="range" 
+                      min="1.0" 
+                      max="3.0" 
+                      step="0.2" 
+                      value={scenarioParams.aisMismatchStrictness}
+                      onChange={(e) => setScenarioParams({ ...scenarioParams, aisMismatchStrictness: parseFloat(e.target.value) })}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      OFAC Sanctions Fuzzy Match Threshold: {scenarioParams.sanctionsFuzzyThreshold}%
+                    </label>
+                    <input 
+                      type="range" 
+                      min="70" 
+                      max="95" 
+                      step="1" 
+                      value={scenarioParams.sanctionsFuzzyThreshold}
+                      onChange={(e) => setScenarioParams({ ...scenarioParams, sanctionsFuzzyThreshold: parseInt(e.target.value) })}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Comparative Analytics Results */}
+                <div>
+                  <h4 style={{ marginBottom: '16px', color: 'var(--text-main)' }}>Scenario Simulation Impact Dashboard</h4>
+                  <div className="grid-metrics" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                    <div className="tile">
+                      <div className="tile-label">Scoped Records</div>
+                      <div className="t-big">{scenarioResult.scopedTotalCount}</div>
+                      <div className="tile-sub">Value: ${scenarioResult.scopedTotalValue.toLocaleString()}</div>
+                    </div>
+
+                    <div className="tile">
+                      <div className="tile-label">Auto-Approval Rate</div>
+                      <div className="t-big" style={{ color: scenarioResult.scenarioAutoApprovePct >= scenarioResult.baselineAutoApprovePct ? 'var(--emerald)' : 'var(--amber)' }}>
+                        {scenarioResult.scenarioAutoApprovePct}%
+                      </div>
+                      <div className="tile-sub">Baseline: {scenarioResult.baselineAutoApprovePct}%</div>
+                    </div>
+
+                    <div className="tile">
+                      <div className="tile-label">Baseline Expected Loss</div>
+                      <div className="t-big" style={{ color: 'var(--crimson)' }}>
+                        ${scenarioResult.baselineTotalExpectedLoss.toLocaleString()}
+                      </div>
+                    </div>
+
+                    <div className="tile">
+                      <div className="tile-label">Scenario Expected Loss</div>
+                      <div className="t-big" style={{ color: scenarioResult.netLossDelta >= 0 ? 'var(--emerald)' : 'var(--crimson)' }}>
+                        ${scenarioResult.scenarioTotalExpectedLoss.toLocaleString()}
+                      </div>
+                      <div className="tile-sub" style={{ color: scenarioResult.netLossDelta >= 0 ? 'var(--emerald)' : 'var(--crimson)' }}>
+                        Net Savings: ${scenarioResult.netLossDelta.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Scoped Historical Dataset Table */}
+            <div className="sub">
+              <div className="sub-header">
+                <div className="sub-title">Scoped Anonymized Historical Case Dataset ({scopedHistoricalCases.length} Records)</div>
+              </div>
+              <div className="dtable-wrapper">
+                <table className="dtable">
+                  <thead>
+                    <tr>
+                      <th>Anonymized ID</th>
+                      <th>Sector</th>
+                      <th>Document Type</th>
+                      <th>Claim Value</th>
+                      <th>Original Score</th>
+                      <th>VAT Status</th>
+                      <th>Rate Variance</th>
+                      <th>AIS Status</th>
+                      <th>Sanctions Match</th>
+                      <th>Outcome</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scopedHistoricalCases.map(c => (
+                      <tr key={c.anonymizedId}>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{c.anonymizedId}</td>
+                        <td><span className="badge badge-indigo">{c.sector}</span></td>
+                        <td>{c.documentType}</td>
+                        <td style={{ fontFamily: 'var(--font-mono)' }}>${c.claimValue.toLocaleString()}</td>
+                        <td>
+                          <span className={`badge ${c.originalRiskScore >= 90 ? 'badge-emerald' : c.originalRiskScore >= 60 ? 'badge-amber' : 'badge-crimson'}`}>
+                            {c.originalRiskScore} / 100
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`badge ${c.vatStatus === 'VALID' ? 'badge-emerald' : 'badge-crimson'}`}>{c.vatStatus}</span>
+                        </td>
+                        <td style={{ fontFamily: 'var(--font-mono)' }}>{c.rateDiscrepancyPct}%</td>
+                        <td>
+                          <span className={`badge ${c.aisLocationMismatch ? 'badge-crimson' : 'badge-emerald'}`}>
+                            {c.aisLocationMismatch ? 'MISMATCH' : 'MATCHED'}
+                          </span>
+                        </td>
+                        <td style={{ fontFamily: 'var(--font-mono)' }}>{c.sanctionsMatchRatio}%</td>
+                        <td>
+                          <span className={`badge ${c.historicalOutcome === 'APPROVED' ? 'badge-emerald' : 'badge-crimson'}`}>
+                            {c.historicalOutcome}
+                          </span>
                         </td>
                       </tr>
                     ))}
@@ -170,13 +551,14 @@ export const App: React.FC = () => {
           <div className="sub">
             <div className="sub-header">
               <div className="sub-title">F1: Document Ingestion & Key-Value OCR Parser</div>
+              <button className="btn btn-primary" onClick={() => setIsCaseModalOpen(true)}>+ Add Document Case</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
               <div style={{ border: '2px dashed var(--surface-2)', borderRadius: '8px', padding: '40px', textAlign: 'center' }}>
                 <div style={{ fontSize: '32px', marginBottom: '12px' }}>📄</div>
                 <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '8px' }}>Drag & Drop Invoice / Bill of Lading (PDF, PNG)</div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '16px' }}>Supports Section 11 OCR Normalization, Table Extraction, and Checksum Validation</div>
-                <button className="btn btn-primary">Browse Files</button>
+                <button className="btn btn-primary" onClick={() => setIsCaseModalOpen(true)}>Browse Files</button>
               </div>
 
               <div>
@@ -198,7 +580,19 @@ export const App: React.FC = () => {
         {activeTab === 'F2' && (
           <div className="sub">
             <div className="sub-header">
-              <div className="sub-title">F2: Section 15 Pattern Regex Engine</div>
+              <div className="sub-title">F2: Section 15 Pattern Regex Engine (CRUD Enabled)</div>
+              <button className="btn btn-primary" onClick={() => {
+                setEditingPattern({
+                  id: `PAT-NEW-${Date.now()}`,
+                  name: '',
+                  category: 'Tax Identification',
+                  regexPattern: '',
+                  confidenceThreshold: 90,
+                  sampleMatches: [],
+                  status: 'ACTIVE'
+                });
+                setIsPatternModalOpen(true);
+              }}>+ Create Pattern</button>
             </div>
 
             <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -230,7 +624,7 @@ export const App: React.FC = () => {
                     <th>Category</th>
                     <th>Regex Expression</th>
                     <th>Threshold</th>
-                    <th>Action</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -242,9 +636,11 @@ export const App: React.FC = () => {
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--cyan)' }}>{p.regexPattern}</td>
                       <td>{p.confidenceThreshold}%</td>
                       <td>
-                        <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => handleTestPattern(p)}>
-                          Test Regex
-                        </button>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => handleTestPattern(p)}>Test</button>
+                          <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => { setEditingPattern(p); setIsPatternModalOpen(true); }}>Edit</button>
+                          <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => handleDeletePattern(p.id)}>Delete</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -258,7 +654,21 @@ export const App: React.FC = () => {
         {activeTab === 'F3' && (
           <div className="sub">
             <div className="sub-header">
-              <div className="sub-title">F3: Section 14 Business Rule Catalog & Weights</div>
+              <div className="sub-title">F3: Section 14 Business Rule Catalog (CRUD Enabled)</div>
+              <button className="btn btn-primary" onClick={() => {
+                setEditingRule({
+                  id: `RULE-NEW-${Date.now()}`,
+                  code: 'RULE_CUSTOM_CODE',
+                  name: '',
+                  description: '',
+                  severity: 'HIGH',
+                  enabled: true,
+                  weight: 1.0,
+                  thresholdScore: 85,
+                  actionOnFailure: 'FLAG'
+                });
+                setIsRuleModalOpen(true);
+              }}>+ Add Validation Rule</button>
             </div>
             <div className="dtable-wrapper">
               <table className="dtable">
@@ -270,7 +680,7 @@ export const App: React.FC = () => {
                     <th>Weight</th>
                     <th>Action On Failure</th>
                     <th>Status</th>
-                    <th>Toggle</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -290,13 +700,13 @@ export const App: React.FC = () => {
                         {r.enabled ? 'ENABLED' : 'DISABLED'}
                       </td>
                       <td>
-                        <button 
-                          className={`btn ${r.enabled ? 'btn-danger' : 'btn-primary'}`} 
-                          style={{ padding: '4px 10px', fontSize: '11px' }}
-                          onClick={() => handleToggleRule(r.id)}
-                        >
-                          {r.enabled ? 'Disable' : 'Enable'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button className={`btn ${r.enabled ? 'btn-secondary' : 'btn-primary'}`} style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => handleToggleRule(r.id)}>
+                            {r.enabled ? 'Disable' : 'Enable'}
+                          </button>
+                          <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => { setEditingRule(r); setIsRuleModalOpen(true); }}>Edit</button>
+                          <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => handleDeleteRule(r.id)}>Delete</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -490,7 +900,7 @@ export const App: React.FC = () => {
                   <tr>
                     <th>Feedback ID</th>
                     <th>Case ID</th>
-                    <th>Auditor</th>
+                    <th>Auditor / Source</th>
                     <th>Action Taken</th>
                     <th>Reason Code</th>
                     <th>Comment</th>
@@ -504,7 +914,7 @@ export const App: React.FC = () => {
                       <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{fb.caseId}</td>
                       <td>{fb.auditorName}</td>
                       <td>
-                        <span className={`badge ${fb.auditorDecision.includes('APPROVE') ? 'badge-emerald' : 'badge-crimson'}`}>
+                        <span className={`badge ${fb.auditorDecision.includes('APPROVE') ? 'badge-emerald' : fb.auditorDecision.includes('UPDATE') ? 'badge-indigo' : 'badge-crimson'}`}>
                           {fb.auditorDecision}
                         </span>
                       </td>
@@ -520,7 +930,103 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Expandable Blade Drawer for Detailed Case Review */}
+      {/* Modal: Create Validation Case */}
+      {isCaseModalOpen && (
+        <div className="blade-overlay" onClick={() => setIsCaseModalOpen(false)}>
+          <div className="sub" style={{ width: '500px', margin: 'auto', backgroundColor: 'var(--surface-0)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="sub-header">
+              <div className="sub-title">Create New Validation Case</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Vendor Name</label>
+                <input type="text" className="search-box" style={{ width: '100%' }} placeholder="e.g. AeroMaritime Logistics" value={newCaseVendor} onChange={(e) => setNewCaseVendor(e.target.value)} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Document Type</label>
+                <select className="search-box" style={{ width: '100%' }} value={newCaseDocType} onChange={(e) => setNewCaseDocType(e.target.value)}>
+                  <option value="Commercial Tax Invoice">Commercial Tax Invoice</option>
+                  <option value="Bill of Lading">Bill of Lading</option>
+                  <option value="Certificate of Origin">Certificate of Origin</option>
+                  <option value="Marine Insurance Policy">Marine Insurance Policy</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Claim Value (USD)</label>
+                <input type="number" className="search-box" style={{ width: '100%' }} value={newCaseValue} onChange={(e) => setNewCaseValue(parseInt(e.target.value) || 0)} />
+              </div>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
+                <button className="btn btn-secondary" onClick={() => setIsCaseModalOpen(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleCreateCase}>Create Case</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Pattern CRUD */}
+      {isPatternModalOpen && editingPattern && (
+        <div className="blade-overlay" onClick={() => setIsPatternModalOpen(false)}>
+          <div className="sub" style={{ width: '560px', margin: 'auto', backgroundColor: 'var(--surface-0)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="sub-header">
+              <div className="sub-title">{patterns.some(p => p.id === editingPattern.id) ? 'Edit Pattern Rule' : 'Create New Pattern Rule'}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Pattern Name</label>
+                <input type="text" className="search-box" style={{ width: '100%' }} value={editingPattern.name} onChange={(e) => setEditingPattern({ ...editingPattern, name: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Category</label>
+                <input type="text" className="search-box" style={{ width: '100%' }} value={editingPattern.category} onChange={(e) => setEditingPattern({ ...editingPattern, category: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Regex Pattern</label>
+                <input type="text" className="search-box" style={{ width: '100%', fontFamily: 'var(--font-mono)' }} value={editingPattern.regexPattern} onChange={(e) => setEditingPattern({ ...editingPattern, regexPattern: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Confidence Threshold (%)</label>
+                <input type="number" className="search-box" style={{ width: '100%' }} value={editingPattern.confidenceThreshold} onChange={(e) => setEditingPattern({ ...editingPattern, confidenceThreshold: parseInt(e.target.value) || 90 })} />
+              </div>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
+                <button className="btn btn-secondary" onClick={() => setIsPatternModalOpen(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleSavePattern}>Save Pattern</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Rule CRUD */}
+      {isRuleModalOpen && editingRule && (
+        <div className="blade-overlay" onClick={() => setIsRuleModalOpen(false)}>
+          <div className="sub" style={{ width: '560px', margin: 'auto', backgroundColor: 'var(--surface-0)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="sub-header">
+              <div className="sub-title">{rules.some(r => r.id === editingRule.id) ? 'Edit Business Rule' : 'Create Validation Rule'}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Rule Code</label>
+                <input type="text" className="search-box" style={{ width: '100%', fontFamily: 'var(--font-mono)' }} value={editingRule.code} onChange={(e) => setEditingRule({ ...editingRule, code: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Rule Name</label>
+                <input type="text" className="search-box" style={{ width: '100%' }} value={editingRule.name} onChange={(e) => setEditingRule({ ...editingRule, name: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Weight Multiplier</label>
+                <input type="number" step="0.1" className="search-box" style={{ width: '100%' }} value={editingRule.weight} onChange={(e) => setEditingRule({ ...editingRule, weight: parseFloat(e.target.value) || 1.0 })} />
+              </div>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
+                <button className="btn btn-secondary" onClick={() => setIsRuleModalOpen(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleSaveRule}>Save Rule</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expandable Blade Drawer for Case Review */}
       {selectedCase && (
         <div className="blade-overlay" onClick={() => setSelectedCase(null)}>
           <div className="blade" onClick={(e) => e.stopPropagation()}>
