@@ -1,25 +1,34 @@
 import React, { useState } from 'react';
 import { MOCK_CASES, MOCK_PATTERNS, MOCK_RULES, MOCK_LINEAGE_GRAPH, MOCK_FEEDBACK_QUEUE, MOCK_EXECUTIVE_METRICS, MOCK_ANONYMIZED_HISTORICAL_CASES } from './data/mockData';
-import { CaseItem, FindingItem, PatternRule, ValidationRule, LearningFeedback, HistoricalFilter, WhatIfScenarioParams } from './types/tdv';
+import { CaseItem, FindingItem, PatternRule, ValidationRule, LearningFeedback, HistoricalFilter, WhatIfScenarioParams, ValidationAnalysisRun, ReportFormat, ReportType, VoyagePublishResponse } from './types/tdv';
 import { evaluateCaseScoring } from './services/scoringEngine';
 import { filterHistoricalDataset, simulateWhatIfScenario } from './services/scenarioEngine';
+import { runValidationAnalysis, publishToVoyageManagement } from './services/validationAnalysisEngine';
+import { generateReportFile } from './services/reportGeneratorService';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('F9');
   
-  // CRUD State for Cases (F1/F9)
+  // Cases State (F1/F9)
   const [cases, setCases] = useState<CaseItem[]>(MOCK_CASES);
   const [selectedCase, setSelectedCase] = useState<CaseItem | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // CRUD State for Patterns (F2)
+  // F1 Trigger Validation Analysis & Report State
+  const [activeAnalysisRun, setActiveAnalysisRun] = useState<ValidationAnalysisRun | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [selectedReportType, setSelectedReportType] = useState<ReportType>('Executive Summary');
+  const [selectedReportFormat, setSelectedReportFormat] = useState<ReportFormat>('PDF');
+  const [voyagePublishResult, setVoyagePublishResult] = useState<VoyagePublishResponse | null>(null);
+
+  // Patterns State (F2)
   const [patterns, setPatterns] = useState<PatternRule[]>(MOCK_PATTERNS);
   const [testInput, setTestInput] = useState<string>('GB99823010');
   const [testResult, setTestResult] = useState<string | null>(null);
   const [editingPattern, setEditingPattern] = useState<PatternRule | null>(null);
   const [isPatternModalOpen, setIsPatternModalOpen] = useState<boolean>(false);
 
-  // CRUD State for Rules (F3)
+  // Rules State (F3)
   const [rules, setRules] = useState<ValidationRule[]>(MOCK_RULES);
   const [editingRule, setEditingRule] = useState<ValidationRule | null>(null);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState<boolean>(false);
@@ -51,20 +60,47 @@ export const App: React.FC = () => {
     autoApproveScoreFloor: 90
   });
 
-  // Modal forms state
+  // New Case Modal state
   const [newCaseVendor, setNewCaseVendor] = useState<string>('');
   const [newCaseDocType, setNewCaseDocType] = useState<string>('Commercial Tax Invoice');
   const [newCaseValue, setNewCaseValue] = useState<number>(75000);
   const [isCaseModalOpen, setIsCaseModalOpen] = useState<boolean>(false);
 
-  // Filtered cases for list
+  // Filtered cases for search
   const filteredCases = cases.filter(c => 
     c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.vendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.documentType.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // CRUD Handlers for Cases
+  // Target Case for F1 Validation Analysis
+  const currentF1Case = cases[0];
+
+  // 1. Trigger Validation Analysis Handler
+  const handleTriggerValidationAnalysis = () => {
+    setIsAnalyzing(true);
+    setTimeout(() => {
+      const runRes = runValidationAnalysis(currentF1Case, rules, patterns);
+      setActiveAnalysisRun(runRes);
+      setIsAnalyzing(false);
+    }, 800);
+  };
+
+  // 2. Report Generation Handler
+  const handleDownloadReport = (format: ReportFormat) => {
+    generateReportFile(currentF1Case, activeAnalysisRun, selectedReportType, format);
+  };
+
+  // 3. Publish to Tegrity Voyage Management Handler
+  const handlePublishToVoyage = () => {
+    const res = publishToVoyageManagement(currentF1Case);
+    setVoyagePublishResult(res);
+
+    // Update status in case list
+    setCases(cases.map(c => c.id === currentF1Case.id ? { ...c, status: 'PUBLISHED_TO_VOYAGE' } : c));
+  };
+
+  // Case Handlers
   const handleCreateCase = () => {
     if (!newCaseVendor) return;
     const newCase: CaseItem = {
@@ -111,7 +147,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // CRUD Handlers for Patterns
+  // Pattern Handlers
   const handleSavePattern = () => {
     if (!editingPattern?.name || !editingPattern?.regexPattern) return;
     if (patterns.some(p => p.id === editingPattern.id)) {
@@ -129,7 +165,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // CRUD Handlers for Rules
+  // Rule Handlers
   const handleSaveRule = () => {
     if (!editingRule?.name || !editingRule?.code) return;
     if (rules.some(r => r.id === editingRule.id)) {
@@ -151,7 +187,6 @@ export const App: React.FC = () => {
     setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
   };
 
-  // Pattern Testing
   const handleTestPattern = (pat: PatternRule) => {
     try {
       const regex = new RegExp(pat.regexPattern);
@@ -162,11 +197,10 @@ export const App: React.FC = () => {
     }
   };
 
-  // What-If Simulation Evaluation
+  // What-If Scenario Evaluation
   const scopedHistoricalCases = filterHistoricalDataset(MOCK_ANONYMIZED_HISTORICAL_CASES, historicalFilter);
   const scenarioResult = simulateWhatIfScenario(scopedHistoricalCases, scenarioParams);
 
-  // Publish Scenario Recommendation to F8 Continuous Learning
   const handlePublishScenarioToLearning = () => {
     const newFeedbacks: LearningFeedback[] = scenarioResult.recommendedWeightUpdates.map((rec, idx) => ({
       id: `FB-SCENARIO-${Date.now()}-${idx}`,
@@ -217,8 +251,8 @@ export const App: React.FC = () => {
       {/* Navigation Tabs F1 - F10 */}
       <nav className="nav-tabs">
         <button className={`nav-tab ${activeTab === 'F9' ? 'active' : ''}`} onClick={() => setActiveTab('F9')}>F9: Executive Analytics</button>
-        <button className={`nav-tab ${activeTab === 'F10' ? 'active' : ''}`} onClick={() => setActiveTab('F10')}>F10: What-If Analytics Sandbox</button>
         <button className={`nav-tab ${activeTab === 'F1' ? 'active' : ''}`} onClick={() => setActiveTab('F1')}>F1: Ingestion & OCR</button>
+        <button className={`nav-tab ${activeTab === 'F10' ? 'active' : ''}`} onClick={() => setActiveTab('F10')}>F10: What-If Analytics Sandbox</button>
         <button className={`nav-tab ${activeTab === 'F2' ? 'active' : ''}`} onClick={() => setActiveTab('F2')}>F2: Pattern Library</button>
         <button className={`nav-tab ${activeTab === 'F3' ? 'active' : ''}`} onClick={() => setActiveTab('F3')}>F3: Rule Catalog</button>
         <button className={`nav-tab ${activeTab === 'F4' ? 'active' : ''}`} onClick={() => setActiveTab('F4')}>F4: Cross-Validation API</button>
@@ -284,7 +318,7 @@ export const App: React.FC = () => {
                           ${c.expectedLoss.toLocaleString()}
                         </td>
                         <td>
-                          <span className={`badge ${c.status === 'APPROVED' ? 'badge-emerald' : c.status === 'FLAGGED' ? 'badge-crimson' : 'badge-amber'}`}>
+                          <span className={`badge ${c.status === 'PUBLISHED_TO_VOYAGE' ? 'badge-indigo' : c.status === 'APPROVED' ? 'badge-emerald' : c.status === 'FLAGGED' ? 'badge-crimson' : 'badge-amber'}`}>
                             {c.status}
                           </span>
                         </td>
@@ -298,6 +332,178 @@ export const App: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* F1: Ingestion & OCR with Validation Analysis, Multi-Format Reports & Voyage Publishing */}
+        {activeTab === 'F1' && (
+          <div>
+            <div className="sub">
+              <div className="sub-header">
+                <div className="sub-title">
+                  <span className="pip cyan"></span>
+                  F1: Document Ingestion, OCR Parser & Validation Analysis Trigger
+                </div>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button className="btn btn-primary" onClick={handleTriggerValidationAnalysis} disabled={isAnalyzing}>
+                    {isAnalyzing ? '⌛ Running Validation Analysis...' : '⚡ Trigger Validation Analysis'}
+                  </button>
+                  <button className="btn btn-secondary" style={{ backgroundColor: 'var(--indigo)', color: '#fff' }} onClick={handlePublishToVoyage}>
+                    🚀 Publish to Tegrity Voyage Management
+                  </button>
+                </div>
+              </div>
+
+              {/* Published Confirmation Notification Banner */}
+              {voyagePublishResult && (
+                <div className="callout" style={{ borderColor: 'var(--emerald)', backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
+                  <div className="callout-title" style={{ color: 'var(--emerald)' }}>
+                    ✓ Document Successfully Published to Tegrity Voyage Management!
+                  </div>
+                  <div style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+                    Publish ID: {voyagePublishResult.publishId} | Tx Hash: {voyagePublishResult.txHash} | Target: {voyagePublishResult.targetSystem}
+                  </div>
+                </div>
+              )}
+
+              {/* Document Overview & Trigger Controls */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div style={{ border: '2px dashed var(--surface-2)', borderRadius: '8px', padding: '30px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '8px' }}>📄</div>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Target Document: {currentF1Case.documentId}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '12px' }}>{currentF1Case.documentType} - {currentF1Case.vendorName} (${currentF1Case.claimValue.toLocaleString()})</div>
+                  <button className="btn btn-primary" onClick={handleTriggerValidationAnalysis} disabled={isAnalyzing}>
+                    {isAnalyzing ? 'Analyzing Engine Running...' : '⚡ Trigger Validation Engine'}
+                  </button>
+                </div>
+
+                <div>
+                  <div className="callout">
+                    <div className="callout-title" style={{ color: 'var(--cyan)' }}>Latest Ingestion & Checksum State</div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', marginTop: '8px', color: 'var(--text-muted)' }}>
+                      <div>[INGEST]: {currentF1Case.documentId} ({currentF1Case.documentType})</div>
+                      <div>[OCR-QUALITY]: {currentF1Case.metadata.ocrConfidence}% Average Confidence</div>
+                      <div>[TABLES]: {currentF1Case.metadata.lineItemCount} Line Items Parsed</div>
+                      <div>[DIGEST]: SHA-256 Digest Validated (8f92a1...9b20)</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Validation Analysis Findings & Risk Grade Output */}
+            {activeAnalysisRun && (
+              <div className="sub">
+                <div className="sub-header">
+                  <div className="sub-title">
+                    <span className="pip emerald"></span>
+                    Validation Analysis Results (Gap Analysis & Risk Grading)
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    Execution Time: {activeAnalysisRun.executionTimeMs}ms | Run ID: {activeAnalysisRun.runId}
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px', marginBottom: '24px' }}>
+                  <div className="tile">
+                    <div className="tile-label">Graded Risk Score</div>
+                    <div className="t-big" style={{ color: activeAnalysisRun.riskScoreGrade >= 90 ? 'var(--emerald)' : activeAnalysisRun.riskScoreGrade >= 60 ? 'var(--amber)' : 'var(--crimson)' }}>
+                      {activeAnalysisRun.riskScoreGrade} / 100
+                    </div>
+                    <div className="tile-sub">
+                      Risk Band: <span className={`badge ${activeAnalysisRun.riskBand === 'LOW' ? 'badge-emerald' : 'badge-crimson'}`}>{activeAnalysisRun.riskBand}</span>
+                    </div>
+                  </div>
+
+                  <div className="tile">
+                    <div className="tile-label">Pattern Library Match Summary</div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                      {activeAnalysisRun.patternMatches.map(pm => (
+                        <span key={pm.patternId} className={`badge ${pm.status === 'MATCHED' ? 'badge-emerald' : 'badge-crimson'}`}>
+                          {pm.patternName} ({pm.confidence}%)
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Gap Analysis & Safeguard Opportunities Table */}
+                <h4 style={{ marginBottom: '12px' }}>Compliance Gap Analysis & Safeguarding Opportunities</h4>
+                <div className="dtable-wrapper">
+                  <table className="dtable">
+                    <thead>
+                      <tr>
+                        <th>Rule / Pattern ID</th>
+                        <th>Title</th>
+                        <th>Gap Type</th>
+                        <th>Severity</th>
+                        <th>Recommended Safeguard Opportunity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeAnalysisRun.gapFindings.map((g, idx) => (
+                        <tr key={idx}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{g.ruleId}</td>
+                          <td style={{ fontWeight: 500 }}>{g.title}</td>
+                          <td><span className="badge badge-indigo">{g.gapType}</span></td>
+                          <td>
+                            <span className={`badge ${g.severity === 'CRITICAL' ? 'badge-crimson' : g.severity === 'HIGH' ? 'badge-amber' : 'badge-emerald'}`}>
+                              {g.severity}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{g.safeguardOpportunity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Multi-Format Report Generator Section */}
+            <div className="sub">
+              <div className="sub-header">
+                <div className="sub-title">
+                  <span className="pip cyan"></span>
+                  Multi-Format Report Generator (PowerPoint, PDF, Word Document)
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div>
+                  <h4 style={{ marginBottom: '12px' }}>1. Select Report Target & Scope</h4>
+                  <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                    <button 
+                      className={`btn ${selectedReportType === 'Executive Summary' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setSelectedReportType('Executive Summary')}
+                    >
+                      Executive Summary Report
+                    </button>
+                    <button 
+                      className={`btn ${selectedReportType === 'Detailed Audit Report' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setSelectedReportType('Detailed Audit Report')}
+                    >
+                      Detailed Technical Audit Report
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 style={{ marginBottom: '12px' }}>2. Generate & Download File</h4>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button className="btn btn-secondary" style={{ border: '1px solid #e11d48', color: '#fda4af' }} onClick={() => handleDownloadReport('PDF')}>
+                      📄 Download PDF (.pdf)
+                    </button>
+                    <button className="btn btn-secondary" style={{ border: '1px solid #2563eb', color: '#93c5fd' }} onClick={() => handleDownloadReport('DOCX')}>
+                      📝 Download Word (.docx)
+                    </button>
+                    <button className="btn btn-secondary" style={{ border: '1px solid #d97706', color: '#fde68a' }} onClick={() => handleDownloadReport('PPTX')}>
+                      📊 Download PowerPoint (.pptx)
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -546,36 +752,6 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* F1: Ingestion & OCR */}
-        {activeTab === 'F1' && (
-          <div className="sub">
-            <div className="sub-header">
-              <div className="sub-title">F1: Document Ingestion & Key-Value OCR Parser</div>
-              <button className="btn btn-primary" onClick={() => setIsCaseModalOpen(true)}>+ Add Document Case</button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-              <div style={{ border: '2px dashed var(--surface-2)', borderRadius: '8px', padding: '40px', textAlign: 'center' }}>
-                <div style={{ fontSize: '32px', marginBottom: '12px' }}>📄</div>
-                <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '8px' }}>Drag & Drop Invoice / Bill of Lading (PDF, PNG)</div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '16px' }}>Supports Section 11 OCR Normalization, Table Extraction, and Checksum Validation</div>
-                <button className="btn btn-primary" onClick={() => setIsCaseModalOpen(true)}>Browse Files</button>
-              </div>
-
-              <div>
-                <div className="callout">
-                  <div className="callout-title" style={{ color: 'var(--cyan)' }}>Latest Ingestion Pipeline Output</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', marginTop: '8px', color: 'var(--text-muted)' }}>
-                    <div>[OCR-ENGINE]: Ingested DOC-INV-88392 (Commercial Tax Invoice)</div>
-                    <div>[OCR-CONFIDENCE]: 96.4% average across 14 KV fields</div>
-                    <div>[TABLE-PARSE]: Extracted 14 line items with unit rates</div>
-                    <div>[CHECKSUM]: SHA-256 digest validated: 8f92a1...9b20</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* F2: Pattern Library */}
         {activeTab === 'F2' && (
           <div className="sub">
@@ -654,7 +830,7 @@ export const App: React.FC = () => {
         {activeTab === 'F3' && (
           <div className="sub">
             <div className="sub-header">
-              <div className="sub-title">F3: Section 14 Business Rule Catalog (CRUD Enabled)</div>
+              <div className="sub-title">F3: Section 14 Business Rule Catalog (Shipping Governance Standards)</div>
               <button className="btn btn-primary" onClick={() => {
                 setEditingRule({
                   id: `RULE-NEW-${Date.now()}`,
@@ -930,7 +1106,7 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Modal: Create Validation Case */}
+      {/* Modal: Create Case */}
       {isCaseModalOpen && (
         <div className="blade-overlay" onClick={() => setIsCaseModalOpen(false)}>
           <div className="sub" style={{ width: '500px', margin: 'auto', backgroundColor: 'var(--surface-0)' }} onClick={(e) => e.stopPropagation()}>
@@ -949,6 +1125,7 @@ export const App: React.FC = () => {
                   <option value="Bill of Lading">Bill of Lading</option>
                   <option value="Certificate of Origin">Certificate of Origin</option>
                   <option value="Marine Insurance Policy">Marine Insurance Policy</option>
+                  <option value="Charter Party Agreement">Charter Party Agreement</option>
                 </select>
               </div>
               <div>

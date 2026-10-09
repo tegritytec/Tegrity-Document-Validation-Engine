@@ -17,6 +17,7 @@ export type CaseStatus =
   | 'FLAGGED'
   | 'APPROVED'
   | 'REJECTED'
+  | 'PUBLISHED_TO_VOYAGE'
   | 'Ratified'
   | 'Reported'
   | 'Learning captured';
@@ -117,7 +118,6 @@ export interface ExecutiveMetric {
   status: 'POSITIVE' | 'NEUTRAL' | 'WARNING';
 }
 
-// Anonymized Historical Case for What-If Scenarios
 export interface AnonymizedHistoricalCase {
   anonymizedId: string;
   documentType: string;
@@ -143,11 +143,11 @@ export interface HistoricalFilter {
 
 export interface WhatIfScenarioParams {
   name: string;
-  vatStrictnessWeight: number; // 0.5x to 2.0x
-  rateTolerancePct: number; // 0% to 10%
-  aisMismatchStrictness: number; // 1.0x to 3.0x
-  sanctionsFuzzyThreshold: number; // 70% to 95%
-  autoApproveScoreFloor: number; // 80 to 95
+  vatStrictnessWeight: number;
+  rateTolerancePct: number;
+  aisMismatchStrictness: number;
+  sanctionsFuzzyThreshold: number;
+  autoApproveScoreFloor: number;
 }
 
 export interface ScenarioSimulationResult {
@@ -159,6 +159,40 @@ export interface ScenarioSimulationResult {
   scenarioAutoApproveCount: number;
   scenarioAutoApprovePct: number;
   scenarioTotalExpectedLoss: number;
-  netLossDelta: number; // Positive = savings, negative = increased exposure
+  netLossDelta: number;
   recommendedWeightUpdates: { ruleId: string; recommendedWeight: number; rationale: string }[];
+}
+
+// Ingestion Validation Analysis Run
+export interface ValidationAnalysisRun {
+  runId: string;
+  timestamp: string;
+  documentId: string;
+  riskScoreGrade: number; // 0 - 100
+  riskBand: RiskBand;
+  gapFindings: {
+    ruleId: string;
+    title: string;
+    gapType: 'COMPLIANCE_GAP' | 'PATTERN_MISMATCH' | 'FINANCIAL_EXPOSURE';
+    severity: Severity;
+    safeguardOpportunity: string;
+  }[];
+  patternMatches: {
+    patternId: string;
+    patternName: string;
+    status: 'MATCHED' | 'FAILED';
+    confidence: number;
+  }[];
+  executionTimeMs: number;
+}
+
+export type ReportFormat = 'PPTX' | 'PDF' | 'DOCX';
+export type ReportType = 'Executive Summary' | 'Detailed Audit Report';
+
+export interface VoyagePublishResponse {
+  publishId: string;
+  txHash: string;
+  publishedAt: string;
+  status: 'SUCCESS' | 'PENDING' | 'FAILED';
+  targetSystem: 'Tegrity Voyage Management Core';
 }
