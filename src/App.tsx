@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { MOCK_CASES, MOCK_PATTERNS, MOCK_RULES, MOCK_LINEAGE_GRAPH, MOCK_FEEDBACK_QUEUE, MOCK_EXECUTIVE_METRICS, MOCK_ANONYMIZED_HISTORICAL_CASES } from './data/mockData';
 import { CaseItem, FindingItem, PatternRule, ValidationRule, LearningFeedback, HistoricalFilter, WhatIfScenarioParams, ValidationAnalysisRun, ReportFormat, ReportType, VoyagePublishResponse } from './types/tdv';
 import { evaluateCaseScoring } from './services/scoringEngine';
@@ -13,6 +13,12 @@ export const App: React.FC = () => {
   const [cases, setCases] = useState<CaseItem[]>(MOCK_CASES);
   const [selectedCase, setSelectedCase] = useState<CaseItem | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // F1 Ingestion & OCR State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [activeF1CaseId, setActiveF1CaseId] = useState<string>(MOCK_CASES[0].id);
 
   // F1 Trigger Validation Analysis & Report State
   const [activeAnalysisRun, setActiveAnalysisRun] = useState<ValidationAnalysisRun | null>(null);
@@ -66,17 +72,94 @@ export const App: React.FC = () => {
   const [newCaseValue, setNewCaseValue] = useState<number>(75000);
   const [isCaseModalOpen, setIsCaseModalOpen] = useState<boolean>(false);
 
-  // Filtered cases for search
-  const filteredCases = cases.filter(c => 
-    c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.vendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.documentType.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   // Target Case for F1 Validation Analysis
-  const currentF1Case = cases[0];
+  const currentF1Case = cases.find(c => c.id === activeF1CaseId) || cases[0];
 
-  // 1. Trigger Validation Analysis Handler
+  // Drag & Drop / File Browser Ingestion Handlers
+  const processUploadedFile = (file: File) => {
+    const docId = `DOC-INGEST-${Math.floor(10000 + Math.random() * 90000)}`;
+    const caseId = `TDV-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const isPdf = file.name.endsWith('.pdf');
+    const isDocx = file.name.endsWith('.docx');
+    const docType = isPdf ? 'Charter Party Agreement' : isDocx ? 'Marine Insurance Policy' : 'Commercial Tax Invoice';
+
+    const newCase: CaseItem = {
+      id: caseId,
+      documentId: docId,
+      documentType: docType,
+      vendorName: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+      submissionDate: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      claimValue: Math.floor(25000 + Math.random() * 200000),
+      currency: 'USD',
+      status: 'IN_REVIEW',
+      assignedAnalyst: 'Ashwani Sethi (Lead Auditor)',
+      overallScore: Math.floor(70 + Math.random() * 25),
+      expectedLoss: Math.floor(5000 + Math.random() * 25000),
+      riskCategory: 'MEDIUM',
+      hasCriticalGap: false,
+      findings: [
+        {
+          id: `FND-${Math.floor(10 + Math.random() * 90)}`,
+          ruleId: 'RULE-CP-001',
+          ruleName: 'BIMCO Laytime & Demurrage Check',
+          severity: 'MEDIUM',
+          probability: 0.25,
+          exposure: 15000,
+          expectedLoss: 3750,
+          description: 'Notice of Readiness (NOR) timestamp validated against port log.',
+          remediation: 'Confirm SHINC laytime deduction limits.'
+        }
+      ],
+      metadata: {
+        fileName: file.name,
+        fileSize: `${(file.size / 1024).toFixed(1)} KB`,
+        ocrConfidence: 98.2,
+        lineItemCount: 8
+      },
+      lineageId: `LIN-${Math.floor(1000 + Math.random() * 9000)}-DAG`
+    };
+
+    setCases([newCase, ...cases]);
+    setActiveF1CaseId(caseId);
+    setUploadedFileName(file.name);
+    setActiveAnalysisRun(null); // Reset run to allow fresh trigger
+    setVoyagePublishResult(null);
+  };
+
+  const handleFileBrowseClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processUploadedFile(e.target.files[0]);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processUploadedFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  // Trigger Validation Analysis Handler
   const handleTriggerValidationAnalysis = () => {
     setIsAnalyzing(true);
     setTimeout(() => {
@@ -86,17 +169,16 @@ export const App: React.FC = () => {
     }, 800);
   };
 
-  // 2. Report Generation Handler
+  // Report Download Handler
   const handleDownloadReport = (format: ReportFormat) => {
     generateReportFile(currentF1Case, activeAnalysisRun, selectedReportType, format);
   };
 
-  // 3. Publish to Tegrity Voyage Management Handler
+  // Publish to Tegrity Voyage Management Handler
   const handlePublishToVoyage = () => {
     const res = publishToVoyageManagement(currentF1Case);
     setVoyagePublishResult(res);
 
-    // Update status in case list
     setCases(cases.map(c => c.id === currentF1Case.id ? { ...c, status: 'PUBLISHED_TO_VOYAGE' } : c));
   };
 
@@ -135,6 +217,7 @@ export const App: React.FC = () => {
     };
 
     setCases([newCase, ...cases]);
+    setActiveF1CaseId(newCase.id);
     setIsCaseModalOpen(false);
     setNewCaseVendor('');
   };
@@ -221,8 +304,23 @@ export const App: React.FC = () => {
     setActiveTab('F8');
   };
 
+  const filteredCases = cases.filter(c => 
+    c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.vendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.documentType.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="app-container">
+      {/* Hidden File Input for Browse */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        style={{ display: 'none' }} 
+        accept=".pdf,.png,.jpg,.jpeg,.docx"
+        onChange={handleFileInputChange}
+      />
+
       {/* Top Console Header */}
       <header className="top-bar">
         <div className="brand-title">
@@ -337,7 +435,7 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* F1: Ingestion & OCR with Validation Analysis, Multi-Format Reports & Voyage Publishing */}
+        {/* F1: Ingestion & OCR with Drag & Drop, File Upload, Validation Analysis Trigger, Multi-Format Reports & Voyage Publishing */}
         {activeTab === 'F1' && (
           <div>
             <div className="sub">
@@ -356,6 +454,18 @@ export const App: React.FC = () => {
                 </div>
               </div>
 
+              {/* Upload Notification Banner */}
+              {uploadedFileName && (
+                <div className="callout" style={{ borderColor: 'var(--cyan)', backgroundColor: 'rgba(6, 182, 212, 0.1)' }}>
+                  <div className="callout-title" style={{ color: 'var(--cyan)' }}>
+                    ✓ Ingested Document: {uploadedFileName}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Extracted metadata, verified checksum digest, and assigned target case: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{currentF1Case.id}</strong>. Ready for validation analysis.
+                  </div>
+                </div>
+              )}
+
               {/* Published Confirmation Notification Banner */}
               {voyagePublishResult && (
                 <div className="callout" style={{ borderColor: 'var(--emerald)', backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
@@ -368,25 +478,49 @@ export const App: React.FC = () => {
                 </div>
               )}
 
-              {/* Document Overview & Trigger Controls */}
+              {/* Interactive Drag & Drop Area + Document Overview */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                <div style={{ border: '2px dashed var(--surface-2)', borderRadius: '8px', padding: '30px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '8px' }}>📄</div>
-                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>Target Document: {currentF1Case.documentId}</div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '12px' }}>{currentF1Case.documentType} - {currentF1Case.vendorName} (${currentF1Case.claimValue.toLocaleString()})</div>
-                  <button className="btn btn-primary" onClick={handleTriggerValidationAnalysis} disabled={isAnalyzing}>
-                    {isAnalyzing ? 'Analyzing Engine Running...' : '⚡ Trigger Validation Engine'}
-                  </button>
+                <div 
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  style={{ 
+                    border: `2px dashed ${isDraggingOver ? 'var(--cyan)' : 'var(--surface-2)'}`, 
+                    backgroundColor: isDraggingOver ? 'rgba(6, 182, 212, 0.08)' : 'transparent',
+                    borderRadius: '8px', 
+                    padding: '30px', 
+                    textAlign: 'center',
+                    transition: 'all 0.2s ease',
+                    cursor: 'pointer'
+                  }}
+                  onClick={handleFileBrowseClick}
+                >
+                  <div style={{ fontSize: '36px', marginBottom: '8px' }}>📂</div>
+                  <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px' }}>
+                    {isDraggingOver ? 'Drop File Here to Ingest Document' : 'Drag & Drop Contract / Invoice (PDF, PNG, DOCX)'}
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '14px' }}>
+                    Click anywhere or use Browse button below to select local files.
+                  </div>
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                    <button className="btn btn-primary" onClick={(e) => { e.stopPropagation(); handleFileBrowseClick(); }}>
+                      📁 Browse Files
+                    </button>
+                    <button className="btn btn-secondary" onClick={(e) => { e.stopPropagation(); handleTriggerValidationAnalysis(); }} disabled={isAnalyzing}>
+                      {isAnalyzing ? 'Analyzing...' : '⚡ Trigger Validation'}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
                   <div className="callout">
-                    <div className="callout-title" style={{ color: 'var(--cyan)' }}>Latest Ingestion & Checksum State</div>
+                    <div className="callout-title" style={{ color: 'var(--cyan)' }}>Current Target Document: {currentF1Case.documentId}</div>
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', marginTop: '8px', color: 'var(--text-muted)' }}>
-                      <div>[INGEST]: {currentF1Case.documentId} ({currentF1Case.documentType})</div>
-                      <div>[OCR-QUALITY]: {currentF1Case.metadata.ocrConfidence}% Average Confidence</div>
-                      <div>[TABLES]: {currentF1Case.metadata.lineItemCount} Line Items Parsed</div>
-                      <div>[DIGEST]: SHA-256 Digest Validated (8f92a1...9b20)</div>
+                      <div>[CASE-ID]: {currentF1Case.id}</div>
+                      <div>[VENDOR]: {currentF1Case.vendorName}</div>
+                      <div>[DOC-TYPE]: {currentF1Case.documentType} (${currentF1Case.claimValue.toLocaleString()})</div>
+                      <div>[OCR-QUALITY]: {currentF1Case.metadata.ocrConfidence || 98.2}% Average Confidence</div>
+                      <div>[TABLES]: {currentF1Case.metadata.lineItemCount || 8} Line Items Parsed</div>
                     </div>
                   </div>
                 </div>
