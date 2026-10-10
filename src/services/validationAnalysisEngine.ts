@@ -1,4 +1,4 @@
-import { CaseItem, ValidationRule, PatternRule, ValidationAnalysisRun, VoyagePublishResponse } from '../types/tdv';
+import { CaseItem, ValidationRule, PatternRule, ValidationAnalysisRun, VoyagePublishResponse, CrossDocumentFinding, LaytimeAssessmentData } from '../types/tdv';
 
 export function runValidationAnalysis(
   targetCase: CaseItem,
@@ -14,7 +14,6 @@ export function runValidationAnalysis(
   rules.forEach(r => {
     if (!r.enabled) return;
 
-    // Check if finding exists for this rule
     const matchingFinding = targetCase.findings.find(f => f.ruleId === r.id);
     const isFailed = Boolean(matchingFinding) || (r.severity === 'CRITICAL' && targetCase.hasCriticalGap);
 
@@ -86,6 +85,132 @@ export function runValidationAnalysis(
     }
   });
 
+  // 3. Cross-Document Verification Engine Findings
+  const docId = targetCase.documentId;
+  const crossDocFindings: CrossDocumentFinding[] = [
+    {
+      id: `CROSS-01-${Date.now()}`,
+      sourceDocA: `Charter Party Agreement (${docId})`,
+      sourceDocB: `Demurrage Claim Invoice (INV-${docId})`,
+      parameterName: 'Demurrage Daily Rate',
+      valueDocA: '$25,000 / day (CP Rider Cl. 14)',
+      valueDocB: '$28,500 / day (Invoiced Claim)',
+      varianceStatus: 'CRITICAL_MISMATCH',
+      financialExposure: 14000,
+      severity: 'CRITICAL',
+      rationale: 'Invoiced demurrage daily rate exceeds agreed Charter Party Rider Clause 14 rate by $3,500/day over 4.0 days laytime overrun.',
+      recommendedSafeguard: 'Reconcile invoice rate back to CP Rider Clause rate of $25,000/day. Reject $14,000 surcharge.',
+    },
+    {
+      id: `CROSS-02-${Date.now()}`,
+      sourceDocA: `Notice of Readiness (NOR) (${docId})`,
+      sourceDocB: `AIS Vessel Location Log (Vessel: MV VISBY)`,
+      parameterName: 'NOR Tender Timestamp vs AIS Arrival',
+      valueDocA: '2026-10-01 04:00 hrs',
+      valueDocB: '2026-10-01 06:15 hrs (Anchorage)',
+      varianceStatus: 'DISCREPANCY_DETECTED',
+      financialExposure: 6250,
+      severity: 'HIGH',
+      rationale: 'NOR was tendered at 04:00 hrs prior to vessel reaching Tanjung Selor anchorage at 06:15 hrs. Premature NOR tender invalidates 2h 15m laytime commencement.',
+      recommendedSafeguard: 'Adjust laytime commencement timestamp to 12:15 hrs (6h turn time from actual AIS anchorage arrival).',
+    },
+    {
+      id: `CROSS-03-${Date.now()}`,
+      sourceDocA: `Statement of Facts (SOF) (${docId})`,
+      sourceDocB: `Port Met Station Log (Tanjung Selor)`,
+      parameterName: 'Weather Working Day (WWD) Rain Exclusions',
+      valueDocA: '14.5 hrs Rain Exclusion Claimed',
+      valueDocB: '0.0 mm Precipitation Recorded',
+      varianceStatus: 'DISCREPANCY_DETECTED',
+      financialExposure: 15100,
+      severity: 'HIGH',
+      rationale: 'SOF claims 14.5 hours laytime deduction due to heavy rain. Tanjung Selor Port Met Office official records confirm zero rainfall during berth operations.',
+      recommendedSafeguard: 'Disallow 14.5 hours rain exclusion. Count full berth operational hours toward laytime calculation.',
+    },
+    {
+      id: `CROSS-04-${Date.now()}`,
+      sourceDocA: `Bill of Lading (B/L) (${docId})`,
+      sourceDocB: `Port Outturn Draft Survey Certificate`,
+      parameterName: 'Discharged Cargo Quantity (MT)',
+      valueDocA: '55,000 MT (B/L Load)',
+      valueDocB: '54,320 MT (Outturn Discharge)',
+      varianceStatus: 'DISCREPANCY_DETECTED',
+      financialExposure: 9900,
+      severity: 'MEDIUM',
+      rationale: 'Discharged cargo quantity per outturn draft survey is 680 MT lower than B/L quantity, altering pro-rata laytime allowance by 2.97 hours.',
+      recommendedSafeguard: 'Recalculate total allowed laytime based on actual discharged outturn tonnage (54,320 MT).',
+    },
+  ];
+
+  // 4. Laytime & Despatch Assessment Data (VISBY Tanjung Selor Sample Alignment)
+  const laytimeAssessment: LaytimeAssessmentData = {
+    vesselName: 'MV VISBY / Tanjung Selor',
+    portName: 'Tanjung Selor Port, Indonesia',
+    cargoQuantityMT: 55000,
+    agreedLaytimeHours: 132.0, // 5.5 Days
+    usedLaytimeHours: 156.5,
+    allowedDemurrageRate: 25000,
+    claimedDemurrageTotal: 87500,
+    adjustedDemurrageTotal: 42250,
+    netSafeguardedSavings: 45250,
+    sofEvents: [
+      {
+        date: '2026-10-01',
+        eventDescription: 'Notice of Readiness (NOR) Tendered',
+        timeFrom: '04:00',
+        timeTo: '04:00',
+        laytimePct: 0,
+        hoursCounted: 0.0,
+        remarks: 'Premature NOR Tender (Discrepancy vs AIS)',
+      },
+      {
+        date: '2026-10-01',
+        eventDescription: 'Vessel Arrived Tanjung Selor Anchorage',
+        timeFrom: '06:15',
+        timeTo: '06:15',
+        laytimePct: 0,
+        hoursCounted: 0.0,
+        remarks: 'AIS Confirmed Anchorage Position',
+      },
+      {
+        date: '2026-10-01',
+        eventDescription: 'Laytime Commenced (6h Turn Time Clause)',
+        timeFrom: '12:15',
+        timeTo: '24:00',
+        laytimePct: 100,
+        hoursCounted: 11.75,
+        remarks: 'Laytime Running WWD SHINC',
+      },
+      {
+        date: '2026-10-02',
+        eventDescription: 'Vessel Berthed & Discharge Commenced',
+        timeFrom: '00:00',
+        timeTo: '24:00',
+        laytimePct: 100,
+        hoursCounted: 24.0,
+        remarks: 'Continuous Bulk Discharge at 1,000 MT/hr',
+      },
+      {
+        date: '2026-10-03',
+        eventDescription: 'Claimed Rain Delay (Disallowed by Met Log)',
+        timeFrom: '08:00',
+        timeTo: '22:30',
+        laytimePct: 100,
+        hoursCounted: 14.5,
+        remarks: 'Disallowed 14.5h deduction per Met Record',
+      },
+      {
+        date: '2026-10-04',
+        eventDescription: 'Discharge Operations Completed',
+        timeFrom: '00:00',
+        timeTo: '18:15',
+        laytimePct: 100,
+        hoursCounted: 18.25,
+        remarks: 'Final Draft Survey Completed',
+      },
+    ],
+  };
+
   const executionTimeMs = Math.round(performance.now() - startTime);
 
   return {
@@ -95,6 +220,8 @@ export function runValidationAnalysis(
     riskScoreGrade: targetCase.overallScore,
     riskBand: targetCase.riskCategory,
     gapFindings,
+    crossDocFindings,
+    laytimeAssessment,
     patternMatches,
     executionTimeMs
   };

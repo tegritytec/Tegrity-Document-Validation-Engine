@@ -179,6 +179,41 @@ export interface ValidationDrillDownItem {
   auditorAction: string;
 }
 
+export interface CrossDocumentFinding {
+  id: string;
+  sourceDocA: string;
+  sourceDocB: string;
+  parameterName: string;
+  valueDocA: string;
+  valueDocB: string;
+  varianceStatus: 'MATCHED' | 'DISCREPANCY_DETECTED' | 'CRITICAL_MISMATCH';
+  financialExposure: number;
+  severity: Severity;
+  rationale: string;
+  recommendedSafeguard: string;
+}
+
+export interface LaytimeAssessmentData {
+  vesselName: string;
+  portName: string;
+  cargoQuantityMT: number;
+  agreedLaytimeHours: number;
+  usedLaytimeHours: number;
+  allowedDemurrageRate: number;
+  claimedDemurrageTotal: number;
+  adjustedDemurrageTotal: number;
+  netSafeguardedSavings: number;
+  sofEvents: {
+    date: string;
+    eventDescription: string;
+    timeFrom: string;
+    timeTo: string;
+    laytimePct: number;
+    hoursCounted: number;
+    remarks: string;
+  }[];
+}
+
 // Ingestion Validation Analysis Run
 export interface ValidationAnalysisRun {
   runId: string;
@@ -200,6 +235,8 @@ export interface ValidationAnalysisRun {
     confidenceScore?: number;
     auditorAction?: string;
   }[];
+  crossDocFindings: CrossDocumentFinding[];
+  laytimeAssessment?: LaytimeAssessmentData;
   patternMatches: {
     patternId: string;
     patternName: string;
@@ -211,7 +248,7 @@ export interface ValidationAnalysisRun {
   executionTimeMs: number;
 }
 
-export type ReportFormat = 'PPTX' | 'PDF' | 'DOCX';
+export type ReportFormat = 'PPTX' | 'PDF' | 'DOCX' | 'XLSX';
 export type ReportType = 'Executive Summary' | 'Detailed Audit Report';
 
 export interface VoyagePublishResponse {

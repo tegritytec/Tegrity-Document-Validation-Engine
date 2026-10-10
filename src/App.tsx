@@ -6,12 +6,16 @@ import { filterHistoricalDataset, simulateWhatIfScenario } from './services/scen
 import { runValidationAnalysis, publishToVoyageManagement } from './services/validationAnalysisEngine';
 import { generateReportFile } from './services/reportGeneratorService';
 import { ValidationDrillDownModal } from './components/ValidationDrillDownModal';
+import { ReportReviewerModal } from './components/ReportReviewerModal';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('F9');
   
   // Drill-Down Rationale Modal State
   const [selectedDrillDownItem, setSelectedDrillDownItem] = useState<ValidationDrillDownItem | null>(null);
+
+  // On-Screen Report Reviewer Modal State
+  const [isReportReviewerOpen, setIsReportReviewerOpen] = useState<boolean>(false);
 
   // Cases State (F1/F9)
   const [cases, setCases] = useState<CaseItem[]>(MOCK_CASES);
@@ -239,13 +243,15 @@ export const App: React.FC = () => {
   };
 
   // Report Download Handler
-  const handleDownloadReport = async (format: ReportFormat) => {
+  const handleDownloadReport = async (reportTypeArg?: ReportType, formatArg?: ReportFormat) => {
     try {
       if (!currentF1Case) {
         alert('Please select or ingest a case document first.');
         return;
       }
-      await generateReportFile(currentF1Case, activeAnalysisRun, selectedReportType, format);
+      const finalType = reportTypeArg || selectedReportType;
+      const finalFormat = formatArg || 'PDF';
+      await generateReportFile(currentF1Case, activeAnalysisRun, finalType, finalFormat);
     } catch (err: any) {
       console.error('Failed to generate report file:', err);
       alert(`Report Generation Error: ${err?.message || err}`);
@@ -1005,6 +1011,45 @@ export const App: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Cross-Document Verification Matrix Table */}
+                {activeAnalysisRun.crossDocFindings && activeAnalysisRun.crossDocFindings.length > 0 && (
+                  <div style={{ marginTop: '24px' }}>
+                    <h4 style={{ marginBottom: '12px' }}>🔗 Cross-Document Verification Matrix (Multi-Doc Discrepancies)</h4>
+                    <div className="dtable-wrapper">
+                      <table className="dtable">
+                        <thead>
+                          <tr>
+                            <th>Parameter Evaluated</th>
+                            <th>Source Document A</th>
+                            <th>Source Document B</th>
+                            <th>Variance Status</th>
+                            <th>Financial Exposure</th>
+                            <th>Recommended Safeguard</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activeAnalysisRun.crossDocFindings.map((cd, idx) => (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600 }}>{cd.parameterName}</td>
+                              <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{cd.valueDocA}</td>
+                              <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{cd.valueDocB}</td>
+                              <td>
+                                <span className={`badge ${cd.varianceStatus === 'CRITICAL_MISMATCH' ? 'badge-crimson' : 'badge-amber'}`}>
+                                  {cd.varianceStatus}
+                                </span>
+                              </td>
+                              <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--crimson)', fontWeight: 600 }}>
+                                ${cd.financialExposure.toLocaleString()}
+                              </td>
+                              <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{cd.recommendedSafeguard}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1014,11 +1059,18 @@ export const App: React.FC = () => {
                 <div className="sub-header">
                   <div className="sub-title">
                     <span className="pip cyan"></span>
-                    Multi-Format Report Generator (PowerPoint, PDF, Word Document)
+                    Multi-Format Report Generator & On-Screen Reviewer
                   </div>
+                  <button 
+                    className="btn btn-primary" 
+                    style={{ backgroundColor: '#00f0ff', color: '#090d16', fontWeight: 700 }}
+                    onClick={() => setIsReportReviewerOpen(true)}
+                  >
+                    👁️ Review Report On-Screen
+                  </button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '24px' }}>
                   <div>
                     <h4 style={{ marginBottom: '12px' }}>1. Select Report Target & Scope</h4>
                     <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
@@ -1038,16 +1090,22 @@ export const App: React.FC = () => {
                   </div>
 
                   <div>
-                    <h4 style={{ marginBottom: '12px' }}>2. Generate & Download File</h4>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <button className="btn btn-secondary" style={{ border: '1px solid #e11d48', color: '#fda4af' }} onClick={() => handleDownloadReport('PDF')}>
-                        📄 Download PDF (.pdf)
+                    <h4 style={{ marginBottom: '12px' }}>2. Generate & Download File Formats</h4>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button className="btn btn-secondary" style={{ border: '1px solid #00f0ff', color: '#00f0ff', fontWeight: 600 }} onClick={() => setIsReportReviewerOpen(true)}>
+                        👁️ Review On-Screen
                       </button>
-                      <button className="btn btn-secondary" style={{ border: '1px solid #2563eb', color: '#93c5fd' }} onClick={() => handleDownloadReport('DOCX')}>
-                        📝 Download Word (.docx)
+                      <button className="btn btn-secondary" style={{ border: '1px solid #e11d48', color: '#fda4af' }} onClick={() => handleDownloadReport(selectedReportType, 'PDF')}>
+                        📄 PDF (.pdf)
                       </button>
-                      <button className="btn btn-secondary" style={{ border: '1px solid #d97706', color: '#fde68a' }} onClick={() => handleDownloadReport('PPTX')}>
-                        📊 Download PowerPoint (.pptx)
+                      <button className="btn btn-secondary" style={{ border: '1px solid #2563eb', color: '#93c5fd' }} onClick={() => handleDownloadReport(selectedReportType, 'DOCX')}>
+                        📝 Word (.docx)
+                      </button>
+                      <button className="btn btn-secondary" style={{ border: '1px solid #d97706', color: '#fde68a' }} onClick={() => handleDownloadReport(selectedReportType, 'PPTX')}>
+                        📊 PowerPoint (.pptx)
+                      </button>
+                      <button className="btn btn-secondary" style={{ border: '1px solid #10b981', color: '#a7f3d0' }} onClick={() => handleDownloadReport(selectedReportType, 'XLSX')}>
+                        📈 Excel (.xlsx)
                       </button>
                     </div>
                   </div>
@@ -1831,6 +1889,16 @@ export const App: React.FC = () => {
         onClose={() => setSelectedDrillDownItem(null)} 
         onPushToContinuousLearning={handlePushToContinuousLearning}
       />
+
+      {/* On-Screen Interactive Report Reviewer Modal */}
+      {isReportReviewerOpen && (
+        <ReportReviewerModal 
+          targetCase={currentF1Case}
+          analysisRun={activeAnalysisRun}
+          onClose={() => setIsReportReviewerOpen(false)}
+          onDownloadReport={handleDownloadReport}
+        />
+      )}
     </div>
   );
 };
